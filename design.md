@@ -6,6 +6,8 @@ Acuan: [PRD](PRD.md) · [Arsitektur](architecture.md)
 
 ## 1. Prinsip desain
 
+Revisi 30 September 2026: tampilan disederhanakan sesuai masukan pengguna. Dashboard langsung menampilkan angka, pengajuan, dan kuota; tidak menggunakan banner sambutan, ilustrasi kalender dekoratif, slogan sidebar, atau footer promosi. Halaman menggunakan judul singkat tanpa paragraf pembuka berulang. Instruksi aturan tetap muncul pada form saat dibutuhkan. Halaman login menggunakan satu form sederhana. Warna aksen difokuskan pada tindakan utama dan status; avatar memakai warna netral.
+
 Form harus menjawab tiga pertanyaan sebelum karyawan menekan Kirim: kapan cuti boleh dimulai, berapa hari kerja yang benar-benar diajukan, dan apakah permohonan masih sesuai kuota serta jadwal posisi. Jika tanggal dipotong oleh aturan akhir bulan, perubahannya harus terlihat jelas dalam ringkasan.
 
 Bahasa antarmuka menggunakan istilah yang familiar: “Ajukan cuti”, “Menunggu SDM”, “Hari kerja”, dan “Tanggal efektif”. Istilah teknis seperti reservasi, job, outbox, dan idempotensi tidak ditampilkan kepada karyawan.

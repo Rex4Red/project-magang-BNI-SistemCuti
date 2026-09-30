@@ -4,11 +4,11 @@ import {addMonths,addDays,blockedDays,isWorking,DEFAULT_CALENDAR} from '../../sh
 async function login(page:Page,role:string){await page.goto('/');await page.getByRole('button',{name:role,exact:true}).click();await page.getByRole('button',{name:'Masuk',exact:true}).click();await expect(page.getByRole('heading',{name:'Ringkasan',exact:true})).toBeVisible();}
 test('SDM dashboard, filter calendar and mobile layout',async({page})=>{
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.setViewportSize({width:1440,height:1080});await login(page,'SDM');await expect(page.getByText('Selamat datang, Nadia.')).toBeVisible();
+  await page.setViewportSize({width:1440,height:1080});await login(page,'SDM');await expect(page.locator('.stats-grid')).toBeVisible();
   mkdirSync('artifacts',{recursive:true});await page.screenshot({path:'artifacts/dashboard-desktop.png',fullPage:true});
   await page.getByRole('button',{name:'Kalender cuti',exact:true}).click();await expect(page.locator('.calendar-grid')).toBeVisible();await page.getByLabel('Filter posisi kalender').selectOption('CS_BINA');
   await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'Buka menu'}).click();await page.locator('nav').getByRole('button',{name:'Ringkasan',exact:true}).click();
-  await expect(page.locator('.welcome')).toBeVisible();await page.screenshot({path:'artifacts/dashboard-mobile.png',fullPage:true,animations:'disabled'});
+  await expect(page.locator('.stats-grid')).toBeVisible();await page.screenshot({path:'artifacts/dashboard-mobile.png',fullPage:true,animations:'disabled'});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(errors).toEqual([]);
 });
 test('employee submits regular leave, SDM confirms and approves, email captured',async({page,browser})=>{
