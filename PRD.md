@@ -50,7 +50,7 @@ Pengguna telah mengonfirmasi bahwa kuota adalah **jumlah orang per posisi per bu
 | A03 — dikonfirmasi | Hari yang dihitung | Hanya hari kerja sesuai kalender kerja; perhitungan rentang inklusif | Kalender tiap unit masih perlu disediakan |
 | A04 — dikonfirmasi | H-3 akhir bulan | Tiga hari kerja terakhir bulan menurut kalender kerja unit tidak boleh dipakai cuti | Akhir pekan/libur tidak ikut menghitung tiga hari kerja |
 | A05 — dikonfirmasi | Posisi sama | Irisan maksimal 2 hari kerja termasuk pending; jumlah orang bersamaan maksimal sebesar kuota posisi | Kuota bulanan tetap habis setelah dipakai orang berbeda walaupun tanggal cutinya berjauhan |
-| A06 | Status pemesan kapasitas | Menunggu SDM dan disetujui sama-sama memakai kuota dan jadwal | Mengubah perilaku antrean |
+| A06 | Status pemesan kapasitas | Menunggu review dan disetujui sama-sama memakai kuota dan jadwal | Mengubah perilaku antrean |
 | A07 | Satu bulan | Satu bulan kalender, bukan 30 hari; tanggal tidak ada disesuaikan ke akhir bulan tujuan | Mengubah tanggal paling awal |
 | A08 — dikonfirmasi | Cuti darurat | Hanya bebas masa tunggu satu bulan; aturan kuota orang, H-3 hari kerja, irisan, dan maksimal 5 hari tetap berlaku | Tidak ada pengecualian kapasitas atau kalender untuk darurat |
 | A09 | Notifikasi reguler | Pengingat kepada SDM pada tanggal mulai efektif dikurangi satu bulan; jika waktu itu sudah lewat, kirim segera setelah pengajuan | Mengubah waktu penjadwalan |
@@ -150,7 +150,7 @@ Tanggal mulai paling awal adalah hari ini menurut waktu server di Asia/Jakarta. 
 | Alasan | Teks wajib 10–2.000 karakter; hanya karyawan terkait dan SDM berwenang yang melihat |
 | Tanggal mulai/akhir diminta | Wajib; diproses oleh aturan tanggal |
 | Tanggal dan durasi efektif | Dihitung otomatis, tidak dapat diketik bebas |
-| Status | Sistem menetapkan Draft atau Menunggu SDM; bukan input karyawan |
+| Status | Sistem menetapkan Draft atau Menunggu review; bukan input karyawan |
 | Nomor HP | Diisi dari profil, tetap dapat diedit; wajib format nomor telepon valid |
 | Email | Diisi dari profil, tetap dapat diedit; wajib format email valid |
 
@@ -161,7 +161,7 @@ Kontak yang diedit disimpan sebagai snapshot pengajuan dan tidak otomatis mengub
 | Status internal | Label | Transisi yang diizinkan |
 |---|---|---|
 | DRAFT | Draft | PENDING_SDM atau hapus draft |
-| PENDING_SDM | Menunggu SDM | APPROVED, REJECTED, WITHDRAWN |
+| PENDING_SDM | Menunggu review | APPROVED, REJECTED, WITHDRAWN |
 | APPROVED | Disetujui | Terminal dalam MVP |
 | REJECTED | Ditolak | Terminal; boleh salin menjadi draft baru |
 | WITHDRAWN | Ditarik | Terminal; boleh buat pengajuan baru |
@@ -200,7 +200,7 @@ Kontak yang diedit disimpan sebagai snapshot pengajuan dan tidak otomatis mengub
 | Detail review | Kontak, alasan, validasi, konfirmasi reguler, approve/reject, audit |
 | Admin | Master, kuota berperiode, kalender berversi, peran, penerima email |
 
-Kartu “Disetujui” menghitung orang unik yang memiliki setidaknya satu pengajuan approved; “Menunggu SDM” menghitung orang unik pending yang belum memiliki approval pada bulan/posisi/unit yang sama. Keduanya tidak tumpang tindih: orang yang memiliki approved dan pending hanya dihitung pada Disetujui. “Tersedia” adalah kuota dikurangi kedua angka tersebut. Tampilkan “Kuota posisi (orang/bulan)” dan hindari label “Sisa hari cuti Anda”. Durasi hari dan jumlah pengajuan adalah metrik terpisah. Ekspor hanya tersedia untuk lingkup SDM yang diizinkan, dicatat di audit, dan secara default tidak membawa alasan pribadi.
+Kartu “Disetujui” menghitung orang unik yang memiliki setidaknya satu pengajuan approved; “Menunggu review” menghitung orang unik pending yang belum memiliki approval pada bulan/posisi/unit yang sama. Keduanya tidak tumpang tindih: orang yang memiliki approved dan pending hanya dihitung pada Disetujui. “Tersedia” adalah kuota dikurangi kedua angka tersebut. Tampilkan “Kuota posisi (orang/bulan)” dan hindari label “Sisa hari cuti Anda”. Durasi hari dan jumlah pengajuan adalah metrik terpisah. Ekspor hanya tersedia untuk lingkup SDM yang diizinkan, dicatat di audit, dan secara default tidak membawa alasan pribadi.
 
 ## 7. Kebutuhan kualitas
 
@@ -248,7 +248,7 @@ Kalender contoh adalah Senin–Jumat tanpa libur tambahan kecuali disebut lain.
 | AC28 | Tanggal cuti A selesai pada 1 Okt; bulan berganti November | Slot A tetap terpakai sepanjang Oktober; November menggunakan bucket baru, tanpa carry-over |
 | AC29 | 30 Okt libur khusus pada kalender Senin–Jumat | H-3 menjadi 27–29 Okt; rentang 26–30 Okt dipotong menjadi 26 Okt saja |
 | AC30 | Darurat meminta hari dalam H-3 atau pemohon baru saat kuota penuh | Ditolak oleh aturan H-3/kuota; bebas masa tunggu tidak mengabaikan aturan lain |
-| AC31 | Orang yang sama punya satu approved dan satu pending pada bulan/posisi yang sama | Dashboard menghitung satu orang Disetujui, nol orang Menunggu SDM untuk orang itu; penolakan pending tidak melepas slot approved |
+| AC31 | Orang yang sama punya satu approved dan satu pending pada bulan/posisi yang sama | Dashboard menghitung satu orang Disetujui, nol orang Menunggu review untuk orang itu; penolakan pending tidak melepas slot approved |
 | AC32 | CS BINA A dan B memiliki irisan yang diizinkan; C meminta tanggal irisan itu | C ditolak: kuota bulanan dan batas orang bersamaan adalah 2, bukan 3 |
 
 ## 9. Tahap pengerjaan dan keputusan sebelum implementasi

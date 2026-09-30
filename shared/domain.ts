@@ -13,7 +13,7 @@ export interface Quota { position:string; label:string; limit:number; used:numbe
 export interface Preview { days:string[]; effectiveStart:string; effectiveEnd:string; duration:number; minimum:string; blocked:string[]; adjusted:boolean; errors:{code:string; message:string}[]; quota:Quota; fingerprint?:string; scheduledAt?:string; }
 export const ACTIVE:Status[] = ['PENDING_SDM','APPROVED'];
 export const DEFAULT_CALENDAR:Calendar = {version:1, weekdays:[1,2,3,4,5], exceptions:{}};
-export const statusLabel:Record<Status,string> = {DRAFT:'Draft',PENDING_SDM:'Menunggu SDM',APPROVED:'Disetujui',REJECTED:'Ditolak',WITHDRAWN:'Ditarik'};
+export const statusLabel:Record<Status,string> = {DRAFT:'Draft',PENDING_SDM:'Menunggu review',APPROVED:'Disetujui',REJECTED:'Ditolak',WITHDRAWN:'Ditarik'};
 export const positionLabel = (code:string) => POSITIONS.find(p=>p[0]===code)?.[1] ?? code;
 export const dateOnly = (now:Date = new Date()) => new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Jakarta',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
 export const date = (s:string) => new Date(s+'T00:00:00Z');

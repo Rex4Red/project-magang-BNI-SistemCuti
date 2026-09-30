@@ -7,6 +7,10 @@
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 /* Compact workspace: operational content first, no promotional panels. */
+.month-control select{border:0;background:transparent;min-height:36px;padding:0 4px;font-size:12px;max-width:190px}
+.bni-logo{display:inline-block;position:relative;width:90px;aspect-ratio:900 / 263;overflow:hidden;flex-shrink:0;vertical-align:middle}
+.bni-logo img{position:absolute;width:120%;height:auto;max-width:none;left:-10%;top:-102.28137%;display:block}
+.brand .bni-logo{width:78px}.login-box>.bni-logo,.boot>.bni-logo{width:120px}
 :root{background:#f7f8fa;color:#293c43}
 main{padding-bottom:32px}
 .sidebar{width:224px;padding:25px 18px 18px}
@@ -21,7 +25,10 @@ nav button{font-size:13px;padding:13px 12px}nav button.active:before{display:non
 th{font-size:11px;color:#6b7e85}td{padding:16px 20px;font-size:13px}td>small{font-size:11px;color:#7e9199}.person strong{font-size:13px}.person small{font-size:11px;color:#7e9199}.neutral{background:#f0f3f5;color:#61767e}.badge{font-size:11px;padding:5px 8px}
 .quota-row strong,.quota-row span{font-size:12px}.quota-row small{font-size:10px}.legend{font-size:10px;gap:12px}.quota-link{font-size:12px}.text-button{font-size:12px}
 .empty{padding:45px 20px}.empty svg{display:none}.empty h3{margin:0;color:#788b93;font-family:inherit;font-weight:400;font-size:14px}
-.login{display:block;background:#f7f8fa}.login-main{min-height:100vh;background:transparent}.login-box{background:#fff;border:1px solid var(--border);border-radius:12px;padding:32px;width:400px}.login-box h2{margin:14px 0 28px;font-size:24px}
+.login{display:block;background:#f7f8fa}.login-main{min-height:100vh;background:transparent}.login-box{background:#fff;border:1px solid var(--border);border-radius:12px;padding:32px;width:400px}.login-box h2{margin:14px 0 28px;font-size:28px}
+.login-box .field{font-size:14px}.login-box input{font-size:16px;min-height:48px}.login-box .full{font-size:15px;min-height:48px}
+.login-box .demo-accounts>span{font-size:11px;letter-spacing:1px}.login-box .demo-accounts button{font-size:13px;padding:10px 9px;gap:6px}.login-box .demo-accounts>small{font-size:12px}
+@media(max-width:380px){.login-box .demo-accounts>div{flex-wrap:wrap}.login-box .demo-accounts button{min-width:82px}}
 .section-number>b{display:none}.section-number{margin-bottom:18px}.form-summary h2{font-size:16px}.summary-placeholder{padding:24px 8px}.summary-placeholder>svg{display:none}
 @media(max-width:1200px){.sidebar{width:210px}.main-shell{margin-left:210px}.brand-product{font-size:13px}.stat-card{padding:18px}.stat-head>span:first-child{font-size:12px}}
 @media(max-width:760px){.main-shell{margin-left:0}.sidebar{width:240px}.topbar{height:60px}.page-heading h1{font-size:24px}.stat-card{padding:17px}.stat-value{font-size:28px}.stats-grid{gap:12px}.stat-value>span{font-size:11px}.dashboard-grid{gap:18px}.person strong{font-size:12px}.panel-heading{padding:18px}.login-box{padding:25px}.quota-list{column-gap:20px}

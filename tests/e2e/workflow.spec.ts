@@ -19,8 +19,15 @@ test('employee submits regular leave, SDM confirms and approves, email captured'
   await page.getByLabel('Jenis cuti',{exact:true}).fill('Keperluan keluarga');await page.getByLabel('Alasan pengajuan').fill('Menghadiri acara keluarga untuk pengujian aplikasi.');
   await page.getByLabel('Tanggal mulai',{exact:true}).fill(start);await page.getByLabel('Tanggal akhir',{exact:true}).fill(start);
   await expect(page.getByRole('button',{name:'Tinjau pengajuan'})).toBeEnabled();await page.getByRole('button',{name:'Tinjau pengajuan'}).click();await page.getByRole('button',{name:'Kirim pengajuan'}).click();
-  const dialog=page.getByRole('dialog');await expect(dialog.getByText('Menunggu SDM',{exact:true})).toBeVisible();const title=await dialog.locator('.modal-header h2').innerText();const number=title.replace('Detail ','');
-  const other=await browser.newContext();const hr=await other.newPage();await login(hr,'SDM');await hr.getByLabel('Bulan monitoring').fill(month);await hr.locator('nav').getByRole('button',{name:/Pengajuan cuti/}).click();await hr.getByLabel('Cari pengajuan').fill(number);await hr.getByRole('button',{name:'Lihat Alya Rahma '+number,exact:true}).click();
+  const dialog=page.getByRole('dialog');await expect(dialog.getByText('Menunggu review',{exact:true})).toBeVisible();const title=await dialog.locator('.modal-header h2').innerText();const number=title.replace('Detail ','');
+  const other=await browser.newContext();const hr=await other.newPage();await login(hr,'SDM');await hr.getByLabel('Bulan monitoring').fill(month);await hr.locator('nav').getByRole('button',{name:/Pengajuan cuti/}).click();await expect(hr.getByLabel('Filter bulan pengajuan')).toHaveValue('');
+  await expect(hr.getByRole('button',{name:'Lihat Alya Rahma '+number,exact:true})).toBeVisible();
+  await hr.getByLabel('Filter bulan pengajuan').selectOption(month);
+  await expect(hr.locator('.table-footer')).not.toContainText('Semua bulan');
+  await hr.getByLabel('Filter bulan pengajuan').selectOption('');
+  await expect(hr.locator('.table-footer')).toContainText('Semua bulan');
+  await expect(hr.getByRole('link',{name:'Unduh laporan'})).toHaveAttribute('href','/api/reports.csv?month=all');
+  await hr.getByLabel('Cari pengajuan').fill(number);await hr.getByRole('button',{name:'Lihat Alya Rahma '+number,exact:true}).click();
   await expect(hr.getByRole('button',{name:'Setujui pengajuan',exact:true})).toBeDisabled();await hr.getByRole('button',{name:'Jadi mengambil cuti'}).click();await expect(hr.getByText('Karyawan telah mengonfirmasi jadi mengambil cuti.')).toBeVisible();await hr.getByRole('button',{name:'Setujui pengajuan',exact:true}).click();await hr.getByRole('button',{name:'Konfirmasi keputusan'}).click();await expect(hr.getByRole('dialog').getByText('Disetujui',{exact:true})).toBeVisible();
   await page.reload();await page.getByLabel('Bulan monitoring').fill(month);await page.locator('nav').getByRole('button',{name:/Pengajuan saya/}).click();await page.getByLabel('Cari pengajuan').fill(number);await expect(page.locator('tbody').getByText('Disetujui',{exact:true})).toBeVisible();
   await other.close();

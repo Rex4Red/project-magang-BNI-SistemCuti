@@ -10,7 +10,7 @@ Revisi 30 September 2026: tampilan disederhanakan sesuai masukan pengguna. Dashb
 
 Form harus menjawab tiga pertanyaan sebelum karyawan menekan Kirim: kapan cuti boleh dimulai, berapa hari kerja yang benar-benar diajukan, dan apakah permohonan masih sesuai kuota serta jadwal posisi. Jika tanggal dipotong oleh aturan akhir bulan, perubahannya harus terlihat jelas dalam ringkasan.
 
-Bahasa antarmuka menggunakan istilah yang familiar: “Ajukan cuti”, “Menunggu SDM”, “Hari kerja”, dan “Tanggal efektif”. Istilah teknis seperti reservasi, job, outbox, dan idempotensi tidak ditampilkan kepada karyawan.
+Bahasa antarmuka menggunakan istilah yang familiar: “Ajukan cuti”, “Menunggu review”, “Hari kerja”, dan “Tanggal efektif”. Istilah teknis seperti reservasi, job, outbox, dan idempotensi tidak ditampilkan kepada karyawan.
 
 Kuota orang per bulan, durasi hari kerja per permohonan, dan jumlah orang yang cuti pada satu tanggal adalah metrik berbeda. Kuota bulanan menghitung karyawan berbeda, termasuk yang tanggal cutinya sudah selesai pada bulan itu. Batas orang bersamaan menggunakan angka kuota posisi yang sama.
 
@@ -36,7 +36,7 @@ flowchart TD
     F --> G{Valid dan kuota tersedia?}
     G -->|Tidak| E
     G -->|Ya| H[Tinjau dan kirim]
-    H --> I[Menunggu SDM]
+    H --> I[Menunggu review]
     I --> J[SDM review]
     J --> K{Reguler?}
     K -->|Ya| L[Catat konfirmasi karyawan]
@@ -58,7 +58,7 @@ Urutan konten:
 4. Pengajuan aktif dan status terbaru.
 5. Ringkasan aturan: masa tunggu reguler, maksimal 5 hari kerja per pengajuan, serta periode akhir bulan yang tidak tersedia.
 
-Ringkasan kuota menampilkan “Kuota posisi”, “Disetujui”, “Menunggu SDM”, dan “Tersedia”, semuanya dalam orang. Satu orang yang punya approved sekaligus pending hanya masuk Disetujui; Menunggu SDM menghitung orang yang hanya memiliki pending. Jumlah hari kerja tampil terpisah pada detail pengajuan.
+Ringkasan kuota menampilkan “Kuota posisi”, “Disetujui”, “Menunggu review”, dan “Tersedia”, semuanya dalam orang. Satu orang yang punya approved sekaligus pending hanya masuk Disetujui; Menunggu review menghitung orang yang hanya memiliki pending. Jumlah hari kerja tampil terpisah pada detail pengajuan.
 
 Contoh kartu CS BINA: kuota 2 orang. A cuti 1 Oktober membuat sisa 1; B cuti 20 Oktober membuat sisa 0 walaupun tanggal tidak bersamaan. Teks pendamping: “Maksimal 2 karyawan CS BINA dapat mengambil cuti pada bulan ini.” Satu pengajuan 5 hari kerja tetap memakai satu slot orang. Jika pengguna sudah memakai slot pada bulan itu, tampilkan “Anda sudah termasuk dalam kuota terpakai”; jangan memblokir pengajuan tambahan hanya karena sisa orang baru nol, tetapi tetap validasi tanggal dan aturan lainnya.
 
@@ -136,7 +136,7 @@ Tanggal saran memperhitungkan kalender unit yang sebenarnya; 2 November hanya be
 
 Ringkasan menampilkan kategori, jenis, alasan, kontak tujuan, tanggal diminta, tanggal efektif, durasi, pemakaian kuota, serta jadwal pemberitahuan SDM. Jika terjadi pemotongan, pengguna harus mencentang “Saya memahami tanggal dan durasi yang disesuaikan” sebelum mengirim.
 
-Status ditampilkan sebagai “Draft” sebelum submit, lalu “Menunggu SDM” sesudah sukses. Tidak ada pilihan status yang dapat diubah karyawan.
+Status ditampilkan sebagai “Draft” sebelum submit, lalu “Menunggu review” sesudah sukses. Tidak ada pilihan status yang dapat diubah karyawan.
 
 Tombol kirim menampilkan proses dan mencegah klik berulang. Jika koneksi putus setelah pengiriman, UI memeriksa hasil menggunakan identitas percobaan yang sama sebelum mencoba ulang. Jangan menyimpulkan bahwa pengajuan gagal hanya karena halaman timeout.
 
