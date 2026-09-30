@@ -1,0 +1,13 @@
+import 'dotenv/config';
+import {openDatabase} from './db';
+import {seed} from './service';
+import {createApp} from './app';
+import {processMail} from './mail';
+const production=process.env.NODE_ENV==='production';
+const demo=!production&&process.env.DEMO_MODE!=='false';
+if(production&&(!process.env.DATABASE_URL||!process.env.APP_ORIGIN?.startsWith('https://')||process.env.DEMO_MODE==='true'))throw new Error('Production requires PostgreSQL, HTTPS APP_ORIGIN, and DEMO_MODE=false.');
+const db=await openDatabase(!production?process.env.DATA_DIR:undefined);await seed(db,demo);
+const app=createApp(db,{demo,origin:process.env.APP_ORIGIN});
+const server=app.listen(Number(process.env.PORT??3001),'127.0.0.1',()=>console.log('Ruang Cuti API ready: http://127.0.0.1:'+(process.env.PORT??3001)));
+let busy=false;const timer=setInterval(async()=>{if(busy)return;busy=true;try{for(let i=0;i<10;i++)if(!await processMail(db))break;}catch{console.error('Mail worker unavailable. Will retry.');}finally{busy=false;}},10000);
+async function stop(){clearInterval(timer);server.close();await db.close();process.exit(0);}process.on('SIGINT',stop);process.on('SIGTERM',stop);
