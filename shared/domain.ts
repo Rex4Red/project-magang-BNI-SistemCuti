@@ -24,16 +24,19 @@ export const addDays = (s:string,n:number) => {const d=date(s); d.setUTCDate(d.g
 export const isWorking = (s:string,c:Calendar) => c.exceptions[s]?.working ?? c.weekdays.includes(date(s).getUTCDay());
 export function monthDays(month:string) { const count=new Date(Date.UTC(+month.slice(0,4),+month.slice(5,7),0)).getUTCDate(); return Array.from({length:count},(_,i)=>`${month}-${String(i+1).padStart(2,'0')}`); }
 export const blockedDays = (month:string,c:Calendar) => monthDays(month).filter(d=>isWorking(d,c)).slice(-3);
-export function calculateMaxEndDate(start:string,c?:Calendar,maxWorkingDays=5):string {
-  if(!validDate(start)) return '';
+export function getValidEndDates(start:string,c?:Calendar,maxWorkingDays=5):string[] {
+  if(!validDate(start)) return [];
   const calendar=c?.weekdays?c:DEFAULT_CALENDAR;
   const month=start.slice(0,7);
   const cutoff=blockedDays(month,calendar)[0];
   const days=monthDays(month);
   const workDays=days.filter(d=>d>=start&&(!cutoff||d<cutoff)&&isWorking(d,calendar));
-  if(workDays.length===0) return start;
-  const target=workDays.slice(0,maxWorkingDays);
-  return target[target.length-1];
+  return workDays.slice(0,maxWorkingDays);
+}
+export function calculateMaxEndDate(start:string,c?:Calendar,maxWorkingDays=5):string {
+  const dates=getValidEndDates(start,c,maxWorkingDays);
+  if(dates.length===0) return validDate(start)?start:'';
+  return dates[dates.length-1];
 }
 export function quotaFor(position:string,month:string,requests:Leave[],limit:number,employeeId=''):Quota {
   const relevant=requests.filter(r=>r.position===position && r.effectiveStart.slice(0,7)===month && ACTIVE.includes(r.status));

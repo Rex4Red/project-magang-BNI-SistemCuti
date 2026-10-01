@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {DEFAULT_CALENDAR,addMonths,blockedDays,calculateMaxEndDate,evaluate,quotaFor,reminderAt,limitFor,type Employee,type Leave,type LeaveInput} from '../shared/domain';
+import {DEFAULT_CALENDAR,addMonths,blockedDays,calculateMaxEndDate,getValidEndDates,evaluate,quotaFor,reminderAt,limitFor,type Employee,type Leave,type LeaveInput} from '../shared/domain';
 const employee:Employee={id:'a',name:'A',email:'a@example.test',phone:'08123456789',unit:'KC01',position:'CS_BINA',roles:['EMPLOYEE'],active:true};
 const input:LeaveInput={category:'REGULAR',subtype:'Keluarga',reason:'Keperluan keluarga.',start:'2026-10-05',end:'2026-10-09',email:employee.email,phone:employee.phone};
 const calculate=(override:Partial<LeaveInput>={},all:Leave[]=[],limit=2,today='2026-09-01',calendar=DEFAULT_CALENDAR)=>evaluate({...input,...override},employee,all,calendar,limit,today);
@@ -23,6 +23,12 @@ describe('Tanggal dan cutoff hari kerja',()=>{
     expect(calculateMaxEndDate('2026-10-26',DEFAULT_CALENDAR)).toBe('2026-10-27');
     const c={...DEFAULT_CALENDAR,exceptions:{'2026-12-09':{working:false,label:'Libur'}}};
     expect(calculateMaxEndDate('2026-12-08',c)).toBe('2026-12-15');
+  });
+  it('menghasilkan tanggal akhir valid hanya pada hari kerja dan mengabaikan akhir pekan / libur',()=>{
+    const valid=getValidEndDates('2026-12-03',DEFAULT_CALENDAR);
+    expect(valid).toEqual(['2026-12-03','2026-12-04','2026-12-07','2026-12-08','2026-12-09']);
+    expect(valid).not.toContain('2026-12-05'); // Sabtu tidak boleh dipilih
+    expect(valid).not.toContain('2026-12-06'); // Minggu tidak boleh dipilih
   });
 });
 describe('Kuota orang, bukan hari',()=>{

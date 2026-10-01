@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState,type FormEvent,type ReactNode} from 'react';
 import {ArrowDownToLine,ArrowRight,ArrowUpRight,Bell,CalendarDays,Check,CheckCheck,ChevronLeft,ChevronRight,Clock3,FileText,Home,Info,LayoutGrid,LogOut,Menu,Plus,Search,Settings2,ShieldCheck,Users,X,Mail,Send,BriefcaseBusiness,CheckCircle2,AlertCircle,SlidersHorizontal,Leaf,Save} from 'lucide-react';
-import {ACTIVE,POSITIONS,addMonths,dateOnly,isWorking,monthDays,positionLabel,statusLabel,calculateMaxEndDate,type Employee,type Leave,type LeaveInput,type Preview,type Quota} from '../shared/domain';
+import {ACTIVE,POSITIONS,addMonths,dateOnly,isWorking,monthDays,positionLabel,statusLabel,calculateMaxEndDate,getValidEndDates,blockedDays,type Employee,type Leave,type LeaveInput,type Preview,type Quota} from '../shared/domain';
 import {api,action,ApiError} from './api';
 const fmt=(d:string,full=false)=>d?new Intl.DateTimeFormat('id-ID',{day:'numeric',month:full?'long':'short',...(full?{year:'numeric'}:{})}).format(new Date(d+'T00:00:00')):'—';
 const monthLabel=(m:string)=>new Intl.DateTimeFormat('id-ID',{month:'long',year:'numeric'}).format(new Date(m+'-01T00:00:00'));
@@ -74,10 +74,136 @@ function RequestTable({requests,onSelect,compact=false,onDraft}:{requests:Leave[
 function RequestList({requests,month,sdm,onSelect,onDraft}:any){const [query,setQuery]=useState('');const [status,setStatus]=useState('ALL');const filtered=requests.filter((r:Leave)=>(!month||(r.effectiveStart||r.start).startsWith(month))&&(status==='ALL'||r.status===status)&&`${r.employeeName} ${r.number} ${positionLabel(r.position)}`.toLowerCase().includes(query.toLowerCase()));return <section className="panel"><div className="list-toolbar"><div className="tabs">{[['ALL','Semua'],['PENDING_SDM','Menunggu'],['APPROVED','Disetujui'],['REJECTED','Ditolak'],...(!sdm?[['DRAFT','Draft'],['WITHDRAWN','Ditarik']]:[])].map(([id,label])=><button key={id} className={status===id?'selected':''} onClick={()=>setStatus(id)}>{label}</button>)}</div><label className="search"><Search size={17}/><input aria-label="Cari pengajuan" placeholder="Cari nama atau nomor…" value={query} onChange={e=>setQuery(e.target.value)}/></label></div><RequestTable requests={filtered} onSelect={onSelect} onDraft={onDraft}/><div className="table-footer">Menampilkan {filtered.length} pengajuan · {month?monthLabel(month):'Semua bulan'}</div></section>;}
 function CalendarView({data,month,setMonth,onSelect}:any){const [position,setPosition]=useState('ALL');const days=monthDays(month);const offset=(new Date(month+'-01T00:00:00').getDay()+6)%7;const entries=data.calendar.filter((r:any)=>position==='ALL'||r.position===position);return <><section className="panel calendar-panel"><div className="panel-heading"><div className="calendar-heading"><button className="icon-button" aria-label="Bulan sebelumnya" onClick={()=>setMonth(addMonths(month+'-01',-1).slice(0,7))}><ChevronLeft size={18}/></button><h2>{monthLabel(month)}</h2><button className="icon-button" aria-label="Bulan berikutnya" onClick={()=>setMonth(addMonths(month+'-01',1).slice(0,7))}><ChevronRight size={18}/></button></div><select aria-label="Filter posisi kalender" value={position} onChange={e=>setPosition(e.target.value)}><option value="ALL">Semua posisi</option>{data.quotas.map((q:Quota)=><option key={q.position} value={q.position}>{q.label}</option>)}</select></div><div className="calendar-scroll"><div className="calendar-grid">{['Sen','Sel','Rab','Kam','Jum','Sab','Min'].map(d=><div className="weekday" key={d}>{d}</div>)}{Array.from({length:offset},(_,i)=><div className="day outside" key={'o'+i}/>)}{days.map(d=>{const blocked=data.blocked.includes(d);const off=!isWorking(d,data.calendarConfig);return <div key={d} className={'day '+(blocked?'blocked ':'')+(off?'off ':'')+(d===data.today?'current':'')}><div className="day-number">{Number(d.slice(-2))}{blocked&&<small>H-3</small>}</div>{data.calendarConfig.exceptions[d]&&<small className="holiday-label">{data.calendarConfig.exceptions[d].label}</small>}{entries.filter((r:any)=>r.days.includes(d)).map((r:any,i:number)=><button disabled={!r.id} key={r.id+'-'+i} onClick={()=>onSelect(r.id)} className={'calendar-event '+(r.status==='APPROVED'?'approved':'pending')}><span>{r.name}</span><small>{positionLabel(r.position)} · {r.status==='APPROVED'?'Disetujui':'Menunggu'}</small></button>)}</div>;})}</div></div><div className="legend calendar-legend"><span><i className="teal-dot"/>Disetujui</span><span><i className="orange-dot"/>Menunggu review</span><span><i className="blocked-dot"/>3 hari kerja terakhir</span><span>Kalender kerja unit: Senin–Jumat + pengecualian admin</span></div></section><section className="panel all-quotas"><div className="panel-heading"><h2>Kapasitas posisi bulan ini</h2><span className="muted">Terpakai / kuota orang</span></div><div className="quota-cards">{data.quotas.map((q:Quota)=><div key={q.position}><strong>{q.label}</strong><span>{q.used}<small> / {q.limit}</small></span><p>{q.available} orang tersedia</p></div>)}</div></section></>;}
 
+function DatePicker({label,value,onChange,min,max,calendar,validDates,disabled=false,disableNonWorking=false,blockedDates=[],placeholder='Pilih tanggal'}:{label:string;value:string;onChange:(val:string)=>void;min?:string;max?:string;calendar?:any;validDates?:string[];disabled?:boolean;disableNonWorking?:boolean;blockedDates?:string[];placeholder?:string}){
+  const containerRef=useRef<HTMLDivElement>(null);
+  const [open,setOpen]=useState(false);
+  const initialMonth=value&&/^\d{4}-\d{2}-\d{2}$/.test(value)?value.slice(0,7):(min&&/^\d{4}-\d{2}-\d{2}$/.test(min)?min.slice(0,7):dateOnly().slice(0,7));
+  const [viewMonth,setViewMonth]=useState(initialMonth);
+  useEffect(()=>{
+    if(value&&/^\d{4}-\d{2}-\d{2}$/.test(value)){setViewMonth(value.slice(0,7));}
+    else if(min&&/^\d{4}-\d{2}-\d{2}$/.test(min)){setViewMonth(min.slice(0,7));}
+  },[value,min]);
+  useEffect(()=>{
+    if(!open)return;
+    const onDocClick=(e:MouseEvent)=>{if(containerRef.current&&!containerRef.current.contains(e.target as Node)){setOpen(false);}};
+    const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')setOpen(false);};
+    document.addEventListener('mousedown',onDocClick);
+    document.addEventListener('keydown',onKey);
+    return()=>{document.removeEventListener('mousedown',onDocClick);document.removeEventListener('keydown',onKey);};
+  },[open]);
+  const prevMonth=()=>setViewMonth(m=>addMonths(m+'-01',-1).slice(0,7));
+  const nextMonth=()=>setViewMonth(m=>addMonths(m+'-01',1).slice(0,7));
+  const displayValue=value?(/^\d{4}-\d{2}-\d{2}$/.test(value)?`${value.slice(8,10)}/${value.slice(5,7)}/${value.slice(0,4)}`:value):'';
+  const handleInputChange=(e:React.ChangeEvent<HTMLInputElement>)=>{
+    const text=e.target.value.trim();
+    if(!text){onChange('');return;}
+    if(/^\d{4}-\d{2}-\d{2}$/.test(text)){onChange(text);return;}
+    const match=text.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+    if(match){const [,d,mo,y]=match;onChange(`${y}-${mo.padStart(2,'0')}-${d.padStart(2,'0')}`);return;}
+    onChange(text);
+  };
+  const days=monthDays(viewMonth);
+  const firstDayOfWeek=new Date(viewMonth+'-01T00:00:00Z').getUTCDay();
+  const weekdays=['Min','Sen','Sel','Rab','Kam','Jum','Sab'];
+  return (
+    <div className="datepicker-wrap" ref={containerRef}>
+      <div className="datepicker-input-box">
+        <input type="text" aria-label={label} value={displayValue} placeholder={placeholder} disabled={disabled} onChange={handleInputChange} onClick={()=>!disabled&&setOpen(o=>!o)}/>
+        <button type="button" tabIndex={-1} aria-label={'Buka kalender '+label} className="datepicker-btn" disabled={disabled} onClick={()=>!disabled&&setOpen(o=>!o)}><CalendarDays size={17}/></button>
+      </div>
+      {open&&!disabled&&(
+        <div className="datepicker-popover" role="dialog" aria-label={'Pilih '+label}>
+          <div className="datepicker-head">
+            <button type="button" className="datepicker-nav" aria-label="Bulan sebelumnya" onClick={prevMonth}><ChevronLeft size={16}/></button>
+            <span className="datepicker-title">{monthLabel(viewMonth)}</span>
+            <button type="button" className="datepicker-nav" aria-label="Bulan berikutnya" onClick={nextMonth}><ChevronRight size={16}/></button>
+          </div>
+          <div className="datepicker-weekdays">
+            {weekdays.map((w,idx)=><span key={w} className={idx===0||idx===6?'col-weekend':''}>{w}</span>)}
+          </div>
+          <div className="datepicker-grid">
+            {Array.from({length:firstDayOfWeek}).map((_,i)=><div key={'pre-'+i} className="datepicker-cell outside"/>)}
+            {days.map(d=>{
+              const dayNum=Number(d.slice(-2));
+              const dow=(firstDayOfWeek+dayNum-1)%7;
+              const isWeekend=dow===0||dow===6;
+              const isHoliday=calendar?.exceptions?.[d]?.working===false;
+              const holidayLabel=calendar?.exceptions?.[d]?.label;
+              const isWork=calendar?isWorking(d,calendar):!isWeekend;
+              const isBeforeMin=Boolean(min&&d<min);
+              const isAfterMax=Boolean(max&&d>max);
+              const isBlocked=Boolean(blockedDates&&blockedDates.includes(d));
+              let selectable=false;
+              let tooltip='';
+              if(validDates){
+                selectable=validDates.includes(d);
+                if(!selectable){
+                  if(isWeekend)tooltip=dow===6?'Sabtu (akhir pekan tidak dapat dipilih)':'Minggu (akhir pekan tidak dapat dipilih)';
+                  else if(isHoliday)tooltip=holidayLabel?`Hari libur: ${holidayLabel}`:'Hari libur tidak dapat dipilih';
+                  else if(isBeforeMin)tooltip='Sebelum tanggal mulai';
+                  else if(isAfterMax)tooltip='Melebihi batas maksimal 5 hari kerja';
+                  else if(isBlocked)tooltip='3 hari kerja terakhir bulan (H-3)';
+                  else tooltip='Bukan pilihan hari kerja yang diizinkan';
+                }
+              }else{
+                if(isBeforeMin)tooltip='Sebelum batas tanggal minimal';
+                else if(isAfterMax)tooltip='Melebihi batas tanggal maksimal';
+                else if(disableNonWorking&&!isWork){
+                  tooltip=isWeekend?(dow===6?'Sabtu (akhir pekan tidak dapat dipilih)':'Minggu (akhir pekan tidak dapat dipilih)'):(holidayLabel?`Hari libur: ${holidayLabel}`:'Hari libur tidak dapat dipilih');
+                }else if(isBlocked){
+                  tooltip='3 hari kerja terakhir bulan (H-3)';
+                }else{
+                  selectable=true;
+                }
+              }
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  disabled={!selectable}
+                  title={tooltip||undefined}
+                  className={'datepicker-cell'+(selectable?' selectable':' disabled')+(isWeekend?' weekend':'')+(isHoliday?' holiday':'')+(d===value?' selected':'')}
+                  onClick={()=>{if(selectable){onChange(d);setOpen(false);}}}
+                >
+                  {dayNum}
+                </button>
+              );
+            })}
+          </div>
+          {validDates&&validDates.length>0&&(
+            <div className="datepicker-quick">
+              <div className="datepicker-quick-label">Pilihan hari kerja ({validDates.length} hari):</div>
+              <div className="datepicker-quick-pills">
+                {validDates.map((vd,i)=>(
+                  <button
+                    key={vd}
+                    type="button"
+                    className={'datepicker-pill'+(vd===value?' active':'')}
+                    onClick={()=>{onChange(vd);setOpen(false);}}
+                  >
+                    <span>{new Intl.DateTimeFormat('id-ID',{weekday:'short',day:'numeric',month:'short'}).format(new Date(vd+'T00:00:00'))}</span>
+                    <small>({i+1} hari)</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="datepicker-notice"><Info size={13}/><span>Sabtu, Minggu, dan hari libur tidak dapat dipilih.</span></div>
+          <div className="datepicker-foot">
+            {value?<button type="button" className="text-button" onClick={()=>{onChange('');setOpen(false);}}>Hapus</button>:<span/>}
+            <button type="button" className="button secondary" style={{minHeight:28,padding:'4px 10px',fontSize:11}} onClick={()=>setOpen(false)}>Tutup</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LeaveForm({user,today,draft,calendar,onDone,onDelete}:{user:Employee;today:string;draft:Leave|null;calendar:any;onDone:(r:Leave)=>void;onDelete:()=>void}){
   const [input,setInput]=useState<LeaveInput>(draft?{category:draft.category,subtype:draft.subtype,reason:draft.reason,start:draft.start,end:draft.end,email:draft.email,phone:draft.phone}:{category:'REGULAR',subtype:'',reason:'',start:'',end:'',email:user.email,phone:user.phone});
   const [emergencyType,setEmergencyType]=useState(draft&&['Cuti Duka','Cuti Sakit'].includes(draft.subtype)?draft.subtype:'Lainnya');const [p,setP]=useState<Preview|null>(null);const [error,setError]=useState('');const [checking,setChecking]=useState(false);const [busy,setBusy]=useState(false);const [accepted,setAccepted]=useState(false);const [review,setReview]=useState(false);const [deleting,setDeleting]=useState(false);const submitKey=useRef(crypto.randomUUID());
   const maxEnd=input.start?calculateMaxEndDate(input.start,calendar):'';
+  const validEndDates=input.start?getValidEndDates(input.start,calendar):[];
   const update=(key:keyof LeaveInput,value:string)=>{setInput(v=>({...v,[key]:value}));setP(null);setReview(false);setAccepted(false);submitKey.current=crypto.randomUUID();};
   const handleStartChange=(newStart:string)=>{if(!newStart){setInput(v=>({...v,start:'',end:''}));}else{const computedMaxEnd=calculateMaxEndDate(newStart,calendar);setInput(v=>({...v,start:newStart,end:computedMaxEnd||newStart}));}setP(null);setReview(false);setAccepted(false);submitKey.current=crypto.randomUUID();};
   const handleEndChange=(newEnd:string)=>{if(!newEnd){update('end','');return;}if(maxEnd&&newEnd>maxEnd)update('end',maxEnd);else if(input.start&&newEnd<input.start)update('end',input.start);else update('end',newEnd);};
@@ -90,11 +216,12 @@ function LeaveForm({user,today,draft,calendar,onDone,onDelete}:{user:Employee;to
   return <div className="form-layout"><section className="panel form-panel"><div className="section-number"><b>01</b><div><h2>Detail pengajuan</h2><p>{user.name} · {positionLabel(user.position)}</p></div></div><div className="category-options"><button className={input.category==='REGULAR'?'chosen':''} onClick={()=>{update('category','REGULAR');update('subtype','');}}><CalendarDays size={23}/><strong>Cuti reguler</strong><small>Rencanakan satu bulan sebelumnya</small>{input.category==='REGULAR'&&<CheckCircle2 size={17}/>}</button><button className={input.category==='EMERGENCY'?'chosen':''} onClick={()=>{update('category','EMERGENCY');update('subtype','Cuti Duka');setEmergencyType('Cuti Duka');}}><Clock3 size={23}/><strong>Cuti darurat</strong><small>Tanpa masa tunggu satu bulan</small>{input.category==='EMERGENCY'&&<CheckCircle2 size={17}/>}</button></div>
       {input.category==='EMERGENCY'?<><Field label="Jenis cuti darurat"><select value={emergencyType} onChange={e=>{setEmergencyType(e.target.value);update('subtype',e.target.value==='Lainnya'?'':e.target.value);}}><option>Cuti Duka</option><option>Cuti Sakit</option><option>Lainnya</option></select></Field>{emergencyType==='Lainnya'&&<Field label="Nama jenis cuti"><input value={input.subtype} onChange={e=>update('subtype',e.target.value)} maxLength={120}/></Field>}</>:<Field label="Jenis cuti"><input placeholder="Contoh: keperluan keluarga" value={input.subtype} onChange={e=>update('subtype',e.target.value)} maxLength={120}/></Field>}
       <Field label="Alasan pengajuan" hint="Minimal 10 karakter. Alasan hanya dapat dilihat oleh Anda dan SDM berwenang."><textarea rows={3} value={input.reason} onChange={e=>update('reason',e.target.value)} placeholder="Ceritakan keperluan cuti Anda…" maxLength={2000}/></Field>
-      <div className="section-number separated"><b>02</b><div><h2>Jadwal cuti</h2></div></div><div className="alert info"><Info size={18}/><span>{input.category==='REGULAR'?`Batas masa tunggu: ${fmt(minimum,true)}. `:'Cuti darurat dapat dimulai hari ini. '}Hindari 3 hari kerja terakhir bulan; maksimal 5 hari kerja.</span></div><div className="field-grid"><Field label="Tanggal mulai"><input type="date" min={minimum} value={input.start} onChange={e=>handleStartChange(e.target.value)}/></Field><Field label="Tanggal akhir" hint={maxEnd?`Maksimal 5 hari kerja s.d. ${fmt(maxEnd,true)}`:'Maksimal 5 hari kerja'}><input type="date" min={input.start||minimum} max={maxEnd||undefined} value={input.end} onChange={e=>handleEndChange(e.target.value)} disabled={!input.start}/></Field></div>
+      <div className="section-number separated"><b>02</b><div><h2>Jadwal cuti</h2></div></div><div className="alert info"><Info size={18}/><span>{input.category==='REGULAR'?`Batas masa tunggu: ${fmt(minimum,true)}. `:'Cuti darurat dapat dimulai hari ini. '}Hindari 3 hari kerja terakhir bulan; maksimal 5 hari kerja.</span></div><div className="field-grid"><Field label="Tanggal mulai"><DatePicker label="Tanggal mulai" value={input.start} onChange={handleStartChange} min={minimum} calendar={calendar} disableNonWorking={true} blockedDates={calendar?blockedDays(minimum.slice(0,7),calendar):[]} placeholder="Pilih tanggal mulai"/></Field><Field label="Tanggal akhir" hint={maxEnd?`Maksimal 5 hari kerja s.d. ${fmt(maxEnd,true)}`:'Maksimal 5 hari kerja'}><DatePicker label="Tanggal akhir" value={input.end} onChange={handleEndChange} min={input.start||minimum} max={maxEnd||undefined} calendar={calendar} validDates={validEndDates} disabled={!input.start} placeholder={!input.start?'Pilih tanggal mulai dahulu':'Pilih tanggal akhir'}/></Field></div>
       {input.start&&!isWorking(input.start,calendar)&&<div className="alert danger">Tanggal mulai bukan hari kerja. Pilih hari kerja lain.</div>}
+      {input.end&&!isWorking(input.end,calendar)&&<div className="alert danger">Tanggal akhir bukan hari kerja (Sabtu, Minggu, atau hari libur). Pilih hari kerja lain.</div>}
       {maxEnd&&input.end&&input.end>maxEnd&&<div className="alert danger">Tanggal akhir melebihi batas 5 hari kerja (maksimal hingga {fmt(maxEnd,true)}).</div>}
       <div className="section-number separated"><b>03</b><div><h2>Informasi kontak</h2></div></div><div className="field-grid"><Field label="Nomor HP"><input type="tel" value={input.phone} onChange={e=>update('phone',e.target.value)}/></Field><Field label="Email pemberitahuan"><input type="email" value={input.email} onChange={e=>update('email',e.target.value)}/></Field></div>
-      {error&&<div className="alert danger" role="alert">{error}</div>}<div className="form-actions"><button className="button secondary" disabled={busy} onClick={save}><Save size={17}/>Simpan draft</button><button className="button primary" disabled={busy||checking||!p||!!p.errors.length} onClick={()=>setReview(true)}>Tinjau pengajuan<ArrowRight size={17}/></button></div>{draft?.id&&<button className="text-button" disabled={busy} onClick={()=>setDeleting(true)}>Hapus draft ini</button>}
+      {error&&<div className="alert danger" role="alert">{error}</div>}<div className="form-actions"><button className="button secondary" disabled={busy} onClick={save}><Save size={17}/>Simpan draft</button><button className="button primary" disabled={busy||checking||!p||!!p.errors.length||!input.start||!input.end||!isWorking(input.start,calendar)||!isWorking(input.end,calendar)} onClick={()=>setReview(true)}>Tinjau pengajuan<ArrowRight size={17}/></button></div>{draft?.id&&<button className="text-button" disabled={busy} onClick={()=>setDeleting(true)}>Hapus draft ini</button>}
     </section><aside className="form-summary panel"><h2>Ringkasan cuti</h2>{checking?<p role="status">Menghitung tanggal dan kuota…</p>:p?<><div className="duration"><strong>{p.duration}</strong><span>hari kerja</span></div><dl><dt>Tanggal diminta</dt><dd>{fmt(input.start)} – {fmt(input.end)}</dd><dt>Tanggal efektif</dt><dd>{fmt(p.effectiveStart)} – {fmt(p.effectiveEnd)}</dd><dt>Kuota tersedia</dt><dd>{p.quota.available} dari {p.quota.limit} orang</dd><dt>Tambahan pemakaian</dt><dd>{p.quota.alreadyCounted?'0 (Anda sudah terhitung)':'1 orang'}</dd><dt>Status awal</dt><dd>Menunggu review</dd></dl>{p.adjusted&&<div className="alert warning"><Info size={17}/><span>Tanggal akhir disesuaikan menjadi {fmt(p.effectiveEnd,true)} mengikuti hari kerja dan batas H-3.</span></div>}{p.errors.map(e=><div className="alert danger" key={e.code} role="alert">{e.message}</div>)}{p.scheduledAt&&<div className="email-note"><Mail size={18}/><span>Pengingat SDM: {new Date(p.scheduledAt).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'})} WIB</span></div>}</>:<div className="summary-placeholder"><CalendarDays size={38}/><p>Lengkapi form untuk melihat ringkasan.</p></div>}</aside>
     {review&&p&&<Modal title="Tinjau pengajuan cuti" onClose={()=>setReview(false)}><Badge status="DRAFT"/><h3>{input.subtype}</h3><p className="reason-text">{input.reason}</p><dl><dt>Kategori</dt><dd>{input.category==='REGULAR'?'Reguler':'Darurat'}</dd><dt>Tanggal diminta</dt><dd>{fmt(input.start,true)} – {fmt(input.end,true)}</dd><dt>Tanggal efektif</dt><dd>{fmt(p.effectiveStart,true)} – {fmt(p.effectiveEnd,true)}</dd><dt>Durasi</dt><dd>{p.duration} hari kerja · {p.quota.alreadyCounted?'slot sudah terhitung':'1 slot orang'}</dd><dt>Kontak</dt><dd>{input.phone}<br/>{input.email}</dd></dl>{p.adjusted&&<label className="checkbox"><input type="checkbox" checked={accepted} onChange={e=>setAccepted(e.target.checked)}/>Saya memahami tanggal dan durasi yang disesuaikan.</label>}{error&&<div className="alert danger">{error}</div>}<div className="modal-actions"><button className="button secondary" onClick={()=>setReview(false)}>Kembali</button><button className="button primary" disabled={busy||(p.adjusted&&!accepted)} onClick={send}><Send size={17}/>{busy?'Mengirim…':'Kirim pengajuan'}</button></div></Modal>}
     {deleting&&<Modal title="Hapus draft?" onClose={()=>setDeleting(false)}><p className="reason-text">Draft ini akan dihapus. Kuota tidak berubah karena draft belum memakai slot.</p><div className="modal-actions"><button className="button secondary" onClick={()=>setDeleting(false)}>Kembali</button><button className="button danger-button" disabled={busy} onClick={async()=>{setBusy(true);try{await api('/drafts/'+draft!.id,{method:'DELETE',key:crypto.randomUUID()});onDelete();}catch(e){setError((e as Error).message);setDeleting(false);}finally{setBusy(false);}}}>Hapus draft</button></div></Modal>}
