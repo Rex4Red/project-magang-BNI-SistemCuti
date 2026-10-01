@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {DEFAULT_CALENDAR,addMonths,blockedDays,evaluate,quotaFor,reminderAt,limitFor,type Employee,type Leave,type LeaveInput} from '../shared/domain';
+import {DEFAULT_CALENDAR,addMonths,blockedDays,calculateMaxEndDate,evaluate,quotaFor,reminderAt,limitFor,type Employee,type Leave,type LeaveInput} from '../shared/domain';
 const employee:Employee={id:'a',name:'A',email:'a@example.test',phone:'08123456789',unit:'KC01',position:'CS_BINA',roles:['EMPLOYEE'],active:true};
 const input:LeaveInput={category:'REGULAR',subtype:'Keluarga',reason:'Keperluan keluarga.',start:'2026-10-05',end:'2026-10-09',email:employee.email,phone:employee.phone};
 const calculate=(override:Partial<LeaveInput>={},all:Leave[]=[],limit=2,today='2026-09-01',calendar=DEFAULT_CALENDAR)=>evaluate({...input,...override},employee,all,calendar,limit,today);
@@ -17,6 +17,13 @@ describe('Tanggal dan cutoff hari kerja',()=>{
   it('darurat bebas masa tunggu saja',()=>{expect(calculate({category:'EMERGENCY',start:'2026-09-01',end:'2026-09-01'}).errors).toEqual([]);expect(calculate({category:'EMERGENCY',start:'2026-09-29',end:'2026-09-29'}).errors.map(e=>e.code)).toContain('MONTH_END_BLOCKED');});
   it('menolak tanggal palsu dan rentang terbalik',()=>{expect(calculate({start:'2026-02-30'}).errors[0].code).toBe('INVALID_RANGE');expect(calculate({end:'2026-10-01'}).errors[0].code).toBe('INVALID_RANGE');});
   it('bulan dengan kurang dari tiga hari kerja seluruhnya diblokir',()=>{const c={...DEFAULT_CALENDAR,weekdays:[],exceptions:{'2026-10-01':{working:true,label:'Kerja'}}};expect(calculate({start:'2026-10-01',end:'2026-10-01'},[],2,'2026-09-01',c).errors.map(e=>e.code)).toContain('MONTH_END_BLOCKED');});
+  it('menyesuaikan tanggal akhir maksimal 5 hari kerja dengan libur dan cutoff',()=>{
+    expect(calculateMaxEndDate('2026-10-05',DEFAULT_CALENDAR)).toBe('2026-10-09');
+    expect(calculateMaxEndDate('2026-12-08',DEFAULT_CALENDAR)).toBe('2026-12-14');
+    expect(calculateMaxEndDate('2026-10-26',DEFAULT_CALENDAR)).toBe('2026-10-27');
+    const c={...DEFAULT_CALENDAR,exceptions:{'2026-12-09':{working:false,label:'Libur'}}};
+    expect(calculateMaxEndDate('2026-12-08',c)).toBe('2026-12-15');
+  });
 });
 describe('Kuota orang, bukan hari',()=>{
   it('lima hari kerja tetap bisa pada kuota dua orang',()=>{expect(calculate().duration).toBe(5);expect(calculate().errors).toEqual([]);});
