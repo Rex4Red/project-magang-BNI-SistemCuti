@@ -9,18 +9,78 @@ const Badge=({status}:{status:Leave['status']})=><span className={'badge '+statu
 const Empty=({title='Belum ada pengajuan',text=''}:{title?:string;text?:string})=><div className="empty"><FileText size={30}/><h3>{title}</h3>{text&&<p>{text}</p>}</div>;
 const Field=({label,children,hint}:{label:string;children:ReactNode;hint?:string})=><label className="field"><span>{label}</span>{children}{hint&&<small>{hint}</small>}</label>;
 type Page='dashboard'|'requests'|'calendar'|'form'|'profile'|'admin'|'notifications';
+const VALID_PAGES:Page[]=['dashboard','requests','calendar','form','profile','admin','notifications'];
+function getInitialPage():Page{
+  try{
+    const hash=window.location.hash.replace(/^#\/?/,'').split('?')[0] as Page;
+    if(VALID_PAGES.includes(hash))return hash;
+    const searchTab=new URLSearchParams(window.location.search).get('tab') as Page;
+    if(VALID_PAGES.includes(searchTab))return searchTab;
+    const stored=sessionStorage.getItem('bni_cuti_page') as Page;
+    if(VALID_PAGES.includes(stored))return stored;
+  }catch{}
+  return 'dashboard';
+}
+function getInitialMonth():string{
+  try{
+    const saved=sessionStorage.getItem('bni_cuti_month');
+    if(saved&&/^\d{4}-\d{2}$/.test(saved))return saved;
+  }catch{}
+  return addMonths(dateOnly().slice(0,7)+'-01',1).slice(0,7);
+}
 export default function App(){
-  const [config,setConfig]=useState<any>(null);const [user,setUser]=useState<Employee|null>(null);const [boot,setBoot]=useState(true);const [page,setPage]=useState<Page>('dashboard');
-  const [requestMonth,setRequestMonth]=useState('');const [month,setMonth]=useState(addMonths(dateOnly().slice(0,7)+'-01',1).slice(0,7));const [data,setData]=useState<any>(null);const [refresh,setRefresh]=useState(0);const [error,setError]=useState('');const [toast,setToast]=useState('');const [selected,setSelected]=useState<Leave|null>(null);const [draft,setDraft]=useState<Leave|null>(null);const [menu,setMenu]=useState(false);const [loading,setLoading]=useState(false);
+  const [config,setConfig]=useState<any>(null);const [user,setUser]=useState<Employee|null>(null);const [boot,setBoot]=useState(true);const [page,setPage]=useState<Page>(getInitialPage);
+  const [requestMonth,setRequestMonth]=useState('');const [month,setMonth]=useState(getInitialMonth);const [data,setData]=useState<any>(null);const [refresh,setRefresh]=useState(0);const [error,setError]=useState('');const [toast,setToast]=useState('');const [selected,setSelected]=useState<Leave|null>(null);const [draft,setDraft]=useState<Leave|null>(null);const [menu,setMenu]=useState(false);const [loading,setLoading]=useState(false);
   const sdm=user?.roles.includes('SDM');const admin=user?.roles.includes('ADMIN');
   useEffect(()=>{Promise.all([api('/config').then(setConfig),api<Employee>('/me').then(setUser).catch(()=>{})]).finally(()=>setBoot(false));},[]);
   useEffect(()=>{if(!user)return;let alive=true;setLoading(true);api('/dashboard?month='+month).then(d=>{if(alive){setData(d);setError('');}}).catch(e=>{if(e.status===401)setUser(null);else setError(e.message);}).finally(()=>{if(alive)setLoading(false);});return()=>{alive=false;};},[user,month,refresh]);
   useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(''),4500);return()=>clearTimeout(t);},[toast]);
   useEffect(()=>{if(!user)return;const id=new URLSearchParams(location.search).get('request');if(id)api<Leave>('/leave-requests/'+id).then(setSelected).catch(e=>setError(e.message));},[user]);
-  const reload=()=>setRefresh(n=>n+1);const nav=(p:Page)=>{if(p==='requests'&&page!=='requests')setRequestMonth('');setPage(p);setMenu(false);setError('');};
+  useEffect(()=>{if(month){try{sessionStorage.setItem('bni_cuti_month',month);}catch{}}},[month]);
+  useEffect(()=>{
+    const onHashChange=()=>{
+      const hash=window.location.hash.replace(/^#\/?/,'').split('?')[0] as Page;
+      if(VALID_PAGES.includes(hash)){setPage(hash);try{sessionStorage.setItem('bni_cuti_page',hash);}catch{}}
+      else if(!hash){setPage('dashboard');try{sessionStorage.setItem('bni_cuti_page','dashboard');}catch{}}
+    };
+    window.addEventListener('hashchange',onHashChange);
+    return()=>window.removeEventListener('hashchange',onHashChange);
+  },[]);
+  useEffect(()=>{
+    if(!user)return;
+    const a=user.roles.includes('ADMIN');
+    if(page==='admin'&&!a)nav('dashboard');
+    else if(page==='form'&&a)nav('dashboard');
+  },[user]);
+  const reload=()=>setRefresh(n=>n+1);
+  const nav=(p:Page)=>{
+    if(p==='requests'&&page!=='requests')setRequestMonth('');
+    setPage(p);
+    setMenu(false);
+    setError('');
+    try{
+      sessionStorage.setItem('bni_cuti_page',p);
+      const targetHash=p==='dashboard'?'':'#'+p;
+      if(window.location.hash!==targetHash){
+        history.replaceState(null,'',window.location.pathname+window.location.search+targetHash);
+      }
+    }catch{}
+  };
   const newLeave=()=>{setDraft(null);nav('form');};
   if(boot)return <div className="boot"><span className="bni-logo"><img src="/images/bni-logo.png" alt="BNI" /></span><p>Menyiapkan ruang kerja Anda…</p></div>;
-  if(!user)return <Login config={config} onLogin={u=>{setData(null);setSelected(null);setUser(u);setPage('dashboard');}}/>;
+  if(!user)return <Login config={config} onLogin={u=>{
+    setData(null);
+    setSelected(null);
+    setUser(u);
+    const target=getInitialPage();
+    const targetPage=(target==='admin'&&!u.roles.includes('ADMIN'))?'dashboard':target;
+    setPage(targetPage);
+    try{
+      sessionStorage.setItem('bni_cuti_page',targetPage);
+      const hash=targetPage==='dashboard'?'':'#'+targetPage;
+      history.replaceState(null,'',window.location.pathname+window.location.search+hash);
+    }catch{}
+  }}/>;
   const pageTitles:Record<Page,string>={dashboard:'Ringkasan',requests:sdm?'Pengajuan cuti':'Pengajuan saya',calendar:'Kalender cuti',form:'Ajukan cuti',profile:'Profil saya',admin:'Administrasi',notifications:'Pusat notifikasi'};
   const navItems:[Page,typeof Home,string][]=[['dashboard',LayoutGrid,'Ringkasan'],['requests',FileText,sdm?'Pengajuan cuti':'Pengajuan saya'],['calendar',CalendarDays,'Kalender cuti']];
   const pending=data?.requests.filter((r:Leave)=>r.status==='PENDING_SDM').length??0;
@@ -32,14 +92,14 @@ export default function App(){
       <div className="sidebar-bottom"><button className="user-card" onClick={()=>nav('profile')}><span className="avatar teal">{initials(user.name)}</span><span><strong>{user.name}</strong><small>{sdm?'Divisi Sumber Daya Manusia':positionLabel(user.position)}</small></span><ChevronRight size={16}/></button></div>
     </aside>
     <div className="main-shell"><header className="topbar"><button className="icon-button mobile-menu" aria-label="Buka menu" onClick={()=>setMenu(true)}><Menu/></button><div className="breadcrumb">Ruang Cuti <ChevronRight size={13}/><strong>{pageTitles[page]}</strong></div><div className="top-actions">{config?.demo&&<span className="demo-pill">Lingkungan demo</span>}<span className="today">{fmt(data?.today??config?.today??dateOnly(),true)}</span><button className="icon-button notification-button" aria-label="Notifikasi" onClick={()=>nav(admin?'admin':'notifications')}><Bell size={20}/>{pending>0&&<i/>}</button><button className="avatar small teal" aria-label="Profil saya" onClick={()=>nav('profile')}>{initials(user.name)}</button></div></header>
-      <main><div className="page-heading"><div><h1>{pageTitles[page]}</h1></div>{['dashboard','requests','calendar'].includes(page)&&<div className="heading-actions">{page==='requests'?<label className="month-control"><CalendarDays size={17}/><select aria-label="Filter bulan pengajuan" value={requestMonth} onChange={e=>setRequestMonth(e.target.value)}><option value="">Semua bulan</option>{Array.from(new Set<string>((data?.requests??[]).map((r:Leave)=>(r.effectiveStart||r.start).slice(0,7)).filter((m:string)=>/^\d{4}-\d{2}$/.test(m)))).sort().reverse().map(m=><option key={m} value={m}>{monthLabel(m)}</option>)}</select></label>:<label className="month-control"><CalendarDays size={17}/><input aria-label="Bulan monitoring" type="month" value={month} onChange={e=>{if(e.target.value)setMonth(e.target.value);}}/></label>}{sdm?<a className="button secondary" href={'/api/reports.csv?month='+(page==='requests'?(requestMonth||'all'):month)}><ArrowDownToLine size={17}/>Unduh laporan</a>:!admin&&<button className="button primary" onClick={newLeave}><Plus size={18}/>Ajukan cuti</button>}</div>}</div>
+      <main><div className="page-heading"><div><h1>{pageTitles[page]}</h1></div>{['dashboard','requests','calendar'].includes(page)&&<div className="heading-actions"><label className="month-control"><CalendarDays size={17}/><input aria-label="Bulan monitoring" type="month" value={month} onChange={e=>{if(e.target.value)setMonth(e.target.value);}}/></label>{page==='requests'&&<label className="month-control"><CalendarDays size={17}/><select aria-label="Filter bulan pengajuan" value={requestMonth} onChange={e=>setRequestMonth(e.target.value)}><option value="">Semua bulan</option>{Array.from(new Set<string>((data?.requests??[]).map((r:Leave)=>(r.effectiveStart||r.start).slice(0,7)).filter((m:string)=>/^\d{4}-\d{2}$/.test(m)))).sort().reverse().map(m=><option key={m} value={m}>{monthLabel(m)}</option>)}</select></label>}{sdm?<a className="button secondary" href={'/api/reports.csv?month='+(page==='requests'?(requestMonth||'all'):month)}><ArrowDownToLine size={17}/>Unduh laporan</a>:!admin&&<button className="button primary" onClick={newLeave}><Plus size={18}/>Ajukan cuti</button>}</div>}</div>
       {error&&<div className="alert danger" role="alert">{error}<button onClick={reload}>Coba lagi</button></div>}
       {loading&&!data?<div className="skeleton-grid"><div/><div/><div/></div>:data&&<>
         {page==='dashboard'&&<Dashboard data={data} month={month} sdm={!!sdm} name={user.name} onSelect={setSelected} onRequests={()=>nav('requests')} onCalendar={()=>nav('calendar')} onNew={newLeave} admin={!!admin}/>}
         {page==='requests'&&<RequestList requests={data.requests} month={requestMonth} sdm={!!sdm} onSelect={setSelected} onDraft={(r:Leave)=>{setDraft(r);nav('form');}}/>}
         {page==='calendar'&&<CalendarView data={data} month={month} setMonth={setMonth} onSelect={(id:string)=>api<Leave>('/leave-requests/'+id).then(setSelected).catch(e=>setError(e.message))}/>}
         {page==='form'&&<LeaveForm key={draft?.id??'new'} user={user} today={data.today} draft={draft} calendar={data.calendarConfig} onDelete={()=>{reload();nav('requests');setToast('Draft dihapus.');}} onDone={r=>{if(r.effectiveStart)setMonth(r.effectiveStart.slice(0,7));reload();setSelected(r.status==='DRAFT'?null:r);nav('requests');setToast(r.status==='DRAFT'?'Draft tersimpan.':'Pengajuan berhasil dikirim ke SDM.');}}/>}
-        {page==='profile'&&<section className="panel profile-panel"><span className="avatar large teal">{initials(user.name)}</span><h2>{user.name}</h2><p>{positionLabel(user.position)} • {data.unitName}</p><dl><dt>Email</dt><dd>{user.email}</dd><dt>Nomor HP</dt><dd>{user.phone}</dd><dt>Hak akses</dt><dd>{user.roles.join(', ')}</dd></dl><div className="alert info"><Info size={18}/>Perubahan kontak pada pengajuan tidak mengubah profil ini. Hubungi administrator untuk memperbarui profil.</div><button className="button secondary" onClick={async()=>{await action('/logout',{});setUser(null);setData(null);}}><LogOut size={17}/>Keluar dari akun</button></section>}
+        {page==='profile'&&<section className="panel profile-panel"><span className="avatar large teal">{initials(user.name)}</span><h2>{user.name}</h2><p>{positionLabel(user.position)} • {data.unitName}</p><dl><dt>Email</dt><dd>{user.email}</dd><dt>Nomor HP</dt><dd>{user.phone}</dd><dt>Hak akses</dt><dd>{user.roles.join(', ')}</dd></dl><div className="alert info"><Info size={18}/>Perubahan kontak pada pengajuan tidak mengubah profil ini. Hubungi administrator untuk memperbarui profil.</div><button className="button secondary" onClick={async()=>{await action('/logout',{});setUser(null);setData(null);setPage('dashboard');try{sessionStorage.removeItem('bni_cuti_page');history.replaceState(null,'',window.location.pathname+window.location.search);}catch{}}}><LogOut size={17}/>Keluar dari akun</button></section>}
         {page==='notifications'&&<section className="panel"><div className="panel-heading"><h2>Aktivitas pengajuan</h2><span className="muted">Status terbaru</span></div>{data.requests.length?data.requests.filter((r:Leave)=>r.status!=='DRAFT').slice(0,15).map((r:Leave)=><button className="activity-row" key={r.id} onClick={()=>setSelected(r)}><span className="activity-icon"><Bell size={18}/></span><span><strong>{r.employeeName} • {r.number}</strong><small>{r.events.at(-1)?.text} · {fmt(r.effectiveStart)}</small></span><Badge status={r.status}/></button>):<Empty title="Belum ada aktivitas"/>}</section>}
         {page==='admin'&&admin&&<Admin onChange={reload} onToast={setToast} today={data.today}/>}
       </>}
@@ -238,11 +298,11 @@ function Detail({leave:r,user,today,onClose,onUpdate,onCopy}:{leave:Leave;user:E
     {confirmAction?<div className="decision-box"><h4>{confirmAction==='WITHDRAWN'?'Tarik pengajuan ini?':confirmAction==='APPROVED'?'Setujui pengajuan ini?':'Tolak pengajuan ini?'}</h4>{confirmAction==='REJECTED'?<Field label="Alasan penolakan"><textarea value={reason} onChange={e=>setReason(e.target.value)} minLength={5} maxLength={2000} placeholder="Jelaskan alasan penolakan…"/></Field>:<p>{confirmAction==='WITHDRAWN'?'Slot orang dilepas jika Anda tidak memiliki pengajuan aktif lain pada bulan ini.':'Keputusan akan dicatat dan pemberitahuan diantrekan ke email karyawan.'}</p>}<div className="modal-actions"><button className="button secondary" onClick={()=>setConfirmAction('')}>Kembali</button><button className={'button '+(confirmAction==='APPROVED'?'primary':'danger-button')} disabled={busy||(confirmAction==='REJECTED'&&reason.trim().length<5)} onClick={()=>update(confirmAction==='WITHDRAWN'?'withdraw':'decision',{outcome:confirmAction,reason})}>{busy?'Menyimpan…':'Konfirmasi keputusan'}</button></div></div>:<div className="modal-actions">{r.status==='PENDING_SDM'&&r.employeeId===user.id&&<button className="button secondary" onClick={()=>setConfirmAction('WITHDRAWN')}>Tarik pengajuan</button>}{canReview&&<><button className="button secondary" onClick={()=>setConfirmAction('REJECTED')}>Tolak pengajuan</button><button className="button primary" disabled={busy||r.effectiveStart<today||(r.category==='REGULAR'&&r.confirmation!=='CONFIRMED')} onClick={()=>setConfirmAction('APPROVED')}><Check size={17}/>Setujui pengajuan</button></>}</div>}
   </Modal>;
 }
-function Admin({onChange,onToast,today}:{onChange:()=>void;onToast:(s:string)=>void;today:string}){const [data,setData]=useState<any>(null);const [tab,setTab]=useState('employees');const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [editing,setEditing]=useState<any>(null);const [date,setDate]=useState('');const [label,setLabel]=useState('');const [working,setWorking]=useState(false);const [qm,setQm]=useState(addMonths(today.slice(0,7)+'-01',1).slice(0,7));const [pos,setPos]=useState('CS_BINA');const [limit,setLimit]=useState(2);const [calYear,setCalYear]=useState('ALL');
+function Admin({onChange,onToast,today}:{onChange:()=>void;onToast:(s:string)=>void;today:string}){const [data,setData]=useState<any>(null);const [tab,setTab]=useState(()=>{try{const saved=sessionStorage.getItem('bni_cuti_admin_tab');if(['employees','quota','calendar','jobs','audit'].includes(saved||''))return saved!;}catch{}return 'employees';});const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [editing,setEditing]=useState<any>(null);const [date,setDate]=useState('');const [label,setLabel]=useState('');const [working,setWorking]=useState(false);const [qm,setQm]=useState(addMonths(today.slice(0,7)+'-01',1).slice(0,7));const [pos,setPos]=useState('CS_BINA');const [limit,setLimit]=useState(2);const [calYear,setCalYear]=useState('ALL');
   const load=()=>api('/admin').then(setData).catch(e=>setError(e.message));useEffect(()=>{load();},[]);
   async function save(path:string,body:any){setBusy(true);setError('');try{await action('/admin/'+path,body);await load();onChange();onToast('Perubahan berhasil disimpan.');setEditing(null);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
   if(!data)return <div className="panel empty">{error||'Memuat administrasi…'}</div>;
-  return <section className="panel"><div className="list-toolbar"><div className="tabs">{[['employees','Karyawan'],['quota','Posisi & kuota'],['calendar','Kalender kerja'],['jobs','Notifikasi email'],['audit','Audit']].map(([id,name])=><button key={id} className={tab===id?'selected':''} onClick={()=>{setTab(id);setError('');}}>{name}</button>)}</div></div>{error&&<div className="alert danger margin" role="alert">{error}</div>}
+  return <section className="panel"><div className="list-toolbar"><div className="tabs">{[['employees','Karyawan'],['quota','Posisi & kuota'],['calendar','Kalender kerja'],['jobs','Notifikasi email'],['audit','Audit']].map(([id,name])=><button key={id} className={tab===id?'selected':''} onClick={()=>{setTab(id);setError('');try{sessionStorage.setItem('bni_cuti_admin_tab',id);}catch{}}}>{name}</button>)}</div></div>{error&&<div className="alert danger margin" role="alert">{error}</div>}
     {tab==='employees'&&<><div className="panel-heading"><div><h2>Direktori karyawan</h2><p>Akses dan penempatan karyawan pada unit ini.</p></div><button className="button primary" onClick={()=>setEditing({name:'',email:'',phone:'',position:'CS_BINA',roles:['EMPLOYEE'],active:true,password:''})}><Plus size={17}/>Tambah karyawan</button></div><div className="table-scroll"><table><thead><tr><th>Nama</th><th>Posisi</th><th>Akses</th><th>Status</th><th/></tr></thead><tbody>{data.employees.map((e:Employee)=><tr key={e.id}><td><strong>{e.name}</strong><small>{e.email}</small></td><td>{positionLabel(e.position)}</td><td>{e.roles.join(', ')}</td><td>{e.active?'Aktif':'Nonaktif'}</td><td><button className="text-button" onClick={()=>setEditing({...e,password:''})}>Edit</button></td></tr>)}</tbody></table></div></>}
     {tab==='quota'&&<div className="admin-content"><h2>Kuota orang per posisi</h2><p className="muted">Berlaku per bulan dan sekaligus menjadi batas orang cuti bersamaan. Periode yang sudah memiliki alokasi dibekukan.</p><div className="field-grid three"><Field label="Bulan berlaku"><input type="month" value={qm} onChange={e=>setQm(e.target.value)}/></Field><Field label="Posisi"><select value={pos} onChange={e=>{setPos(e.target.value);setLimit(POSITIONS.find(p=>p[0]===e.target.value)![2]);}}>{POSITIONS.map(([p,l])=><option key={p} value={p}>{l}</option>)}</select></Field><Field label="Kuota orang"><input type="number" min={0} max={1000} value={limit} onChange={e=>setLimit(+e.target.value)}/></Field></div><button className="button primary" disabled={busy} onClick={()=>save('quota',{month:qm,position:pos,limit})}>Simpan kuota periode</button><div className="quota-cards admin-quotas">{POSITIONS.map(([p,l,q])=><div key={p}><strong>{l}</strong><span>{data.policy.quotas[Object.keys(data.policy.quotas).filter(m=>m<=qm).sort().at(-1)??'']?.[p]??q}<small> orang</small></span></div>)}</div></div>}
     {tab==='calendar'&&<div className="admin-content"><div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:12}}><div><h2>Kalender kerja unit</h2><p className="muted">Pola kerja Senin–Jumat. Tambahkan libur atau hari kerja khusus. Perubahan H-3 yang menyentuh cuti aktif akan ditolak.</p></div><button type="button" className="button secondary" disabled={busy} onClick={()=>save('calendar/sync-2027',{})} title="Muat ulang seluruh hari libur nasional dan cuti bersama 2027">Sinkronkan Libur 2027</button></div><div className="field-grid three"><Field label="Tanggal pengecualian"><input type="date" min={today} value={date} onChange={e=>setDate(e.target.value)}/></Field><Field label="Keterangan"><input value={label} onChange={e=>setLabel(e.target.value)} placeholder="Contoh: libur unit"/></Field><Field label="Jenis hari"><select value={String(working)} onChange={e=>setWorking(e.target.value==='true')}><option value="false">Hari libur</option><option value="true">Hari kerja khusus</option></select></Field></div><button className="button primary" disabled={busy||!date||label.length<2} onClick={()=>save('calendar',{date,label,working})}>Simpan kalender</button><div style={{marginTop:24,display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10}}><strong>Daftar Pengecualian & Libur ({Object.keys(data.policy.calendar.exceptions).length})</strong><div style={{display:'flex',gap:6}}>{['ALL','2026','2027'].map(y=><button key={y} type="button" className={'button '+(calYear===y?'primary':'secondary')} style={{minHeight:30,padding:'4px 10px',fontSize:11}} onClick={()=>setCalYear(y)}>{y==='ALL'?'Semua':y}</button>)}</div></div><div className="exception-list">{Object.entries(data.policy.calendar.exceptions).sort(([a],[b])=>a.localeCompare(b)).filter(([d])=>calYear==='ALL'||d.startsWith(calYear)).map(([d,v]:any)=><div key={d}><span><strong>{fmt(d,true)}</strong> · {v.label} · {v.working?'Kerja':'Libur'}</span><button className="text-button" disabled={busy} onClick={()=>save('calendar',{date:d,label:v.label,working:v.working,remove:true})}>Hapus pengecualian</button></div>)}</div></div>}
