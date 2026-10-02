@@ -8,7 +8,7 @@ import {resolve} from 'node:path';
 import {z,ZodError} from 'zod';
 import type {Database} from './db';
 import {AppError,act,audit,canRead,checkEmail,digest,employees,ensure,getPolicy,inputSchema,mutate,preview,requests,saveRequest,submit} from './service';
-import {ACTIVE,POSITIONS,blockedDays,dateOnly,limitFor,quotaFor,validDate,type Employee,type Leave,type Policy} from '../shared/domain';
+import {ACTIVE,HOLIDAYS_2027,POSITIONS,blockedDays,dateOnly,evaluate,limitFor,quotaFor,validDate,type Employee,type Leave,type Policy} from '../shared/domain';
 declare global {namespace Express {interface Request {actor:Employee;}}}
 export function createApp(db:Database,options:{demo:boolean;now?:()=>Date;origin?:string}) {
   const app=express();const now=options.now??(()=>new Date());const production=process.env.NODE_ENV==='production';
@@ -59,6 +59,24 @@ export function createApp(db:Database,options:{demo:boolean;now?:()=>Date;origin
       const all=await requests(tx,req.actor.unit);for(const r of all.filter(r=>ACTIVE.includes(r.status)&&r.effectiveStart.slice(0,7)===body.date.slice(0,7))){const actor=(await employees(tx)).find(e=>e.id===r.employeeId)!;const result=evaluate({...r,category:'EMERGENCY'},actor,[],changed.calendar,999,r.effectiveStart);ensure(result.days.join(',')===r.days.join(','),'Perubahan kalender memengaruhi cuti aktif pada bulan tersebut.',409);}
       await tx.query('UPDATE units SET policy=$1 WHERE id=$2',[changed,req.actor.unit]);await audit(tx,req.actor,'CALENDAR_UPDATE',body.date);return changed;}));
   });
+  app.post('/api/admin/calendar/sync-2027',async(req,res)=>{
+    res.json(await mutate(db,req.actor,req.get('idempotency-key')??'',{action:'calendar-sync-2027'},async tx=>{
+      const policy=await getPolicy(tx,req.actor.unit);
+      const changed=structuredClone(policy);
+      if(!changed.calendar.exceptions) changed.calendar.exceptions={};
+      for(const [d,h] of Object.entries(HOLIDAYS_2027)) changed.calendar.exceptions[d]=h;
+      changed.calendar.version++;
+      const all=await requests(tx,req.actor.unit);
+      for(const r of all.filter(r=>ACTIVE.includes(r.status)&&r.effectiveStart.startsWith('2027-'))){
+        const actor=(await employees(tx)).find(e=>e.id===r.employeeId)!;
+        const result=evaluate({...r,category:'EMERGENCY'},actor,[],changed.calendar,999,r.effectiveStart);
+        ensure(result.days.join(',')===r.days.join(','),'Perubahan kalender memengaruhi cuti aktif pada tahun 2027.',409);
+      }
+      await tx.query('UPDATE units SET policy=$1 WHERE id=$2',[changed,req.actor.unit]);
+      await audit(tx,req.actor,'CALENDAR_UPDATE','HOLIDAYS_2027_SYNC');
+      return changed;
+    }));
+  });
   app.post('/api/admin/quota',async(req,res)=>{const body=z.object({month:z.string().regex(/^20\d{2}-(0[1-9]|1[0-2])$/),position:z.enum(POSITIONS.map(p=>p[0]) as [string,...string[]]),limit:z.number().int().min(0).max(1000)}).parse(req.body);res.json(await mutate(db,req.actor,req.get('idempotency-key')??'',{action:'quota',...body},async tx=>{ensure(body.month>dateOnly(now()).slice(0,7),'Kuota hanya dapat diubah untuk bulan mendatang.');const all=await requests(tx,req.actor.unit);ensure(!all.some(r=>r.position===body.position&&r.effectiveStart.startsWith(body.month)&&r.status!=='DRAFT'),'Kuota bulan ini sudah memiliki alokasi dan dibekukan.',409);const policy=await getPolicy(tx,req.actor.unit);const defaults=Object.fromEntries(POSITIONS.map(([p])=>[p,limitFor(p,body.month,policy,[])]));policy.quotas[body.month]={...defaults,...policy.quotas[body.month],[body.position]:body.limit};await tx.query('UPDATE units SET policy=$1 WHERE id=$2',[policy,req.actor.unit]);await audit(tx,req.actor,'QUOTA_UPDATE',body.position+':'+body.month);return policy;}));});
   app.post('/api/admin/jobs/:id/retry',async(req,res)=>{await db.query("UPDATE mail_jobs SET state='QUEUED',attempts=0,due_at=$1,last_error=NULL WHERE id=$2 AND unit_id=$3 AND state='FAILED'",[now().toISOString(),req.params.id,req.actor.unit]);await audit(db,req.actor,'MAIL_RETRY',req.params.id as string);res.json({ok:true});});
   app.use('/api',(_req,_res,next)=>next(new AppError(404,'Endpoint tidak ditemukan.')));
@@ -66,4 +84,3 @@ export function createApp(db:Database,options:{demo:boolean;now?:()=>Date;origin
   app.use((err:any,_req:express.Request,res:express.Response,_next:express.NextFunction)=>{if(err instanceof ZodError)return res.status(422).json({message:'Periksa isian: '+err.issues.map(i=>i.path.join('.')+' '+i.message).join('; ')});if(err.code==='23505')return res.status(409).json({message:'Data sudah terdaftar. Gunakan nilai lain.'});if(err instanceof AppError)return res.status(err.status).json({message:err.message,code:err.code,details:err.details});console.error('Request failed:',err.name,err.code??'INTERNAL');res.status(500).json({message:'Terjadi kesalahan server. Coba kembali.'});});
   return app;
 }
-import {evaluate} from '../shared/domain';

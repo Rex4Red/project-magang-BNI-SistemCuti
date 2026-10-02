@@ -73,7 +73,28 @@ export async function act(db:Database,actor:Employee,id:string,action:string,bod
   });
 }
 export async function seed(db:Database,demo:boolean,now=new Date()) {
-  if((await db.query('SELECT id FROM units LIMIT 1')).rows.length)return;
+  const existingUnits = (await db.query('SELECT id, policy FROM units')).rows;
+  if(existingUnits.length) {
+    for(const u of existingUnits) {
+      const pol: Policy = u.policy;
+      let updated = false;
+      if(!pol.calendar) { pol.calendar = structuredClone(DEFAULT_CALENDAR); updated = true; }
+      else {
+        if(!pol.calendar.exceptions) { pol.calendar.exceptions = {}; updated = true; }
+        for(const [d, h] of Object.entries(DEFAULT_CALENDAR.exceptions)) {
+          if(!pol.calendar.exceptions[d]) {
+            pol.calendar.exceptions[d] = h;
+            updated = true;
+          }
+        }
+      }
+      if(updated) {
+        pol.calendar.version = (pol.calendar.version ?? 1) + 1;
+        await db.query('UPDATE units SET policy=$1 WHERE id=$2', [pol, u.id]);
+      }
+    }
+    return;
+  }
   const policy:Policy={calendar:DEFAULT_CALENDAR,quotas:{}};
   await db.transaction(async tx=>{
     await tx.query('INSERT INTO units(id,name,policy) VALUES($1,$2,$3)',['KC01','Kantor Cabang • Demo',policy]);

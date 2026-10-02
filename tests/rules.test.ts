@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {DEFAULT_CALENDAR,addMonths,blockedDays,calculateMaxEndDate,getValidEndDates,evaluate,quotaFor,reminderAt,limitFor,type Employee,type Leave,type LeaveInput} from '../shared/domain';
+import {DEFAULT_CALENDAR,HOLIDAYS_2027,isWorking,addMonths,blockedDays,calculateMaxEndDate,getValidEndDates,evaluate,quotaFor,reminderAt,limitFor,type Employee,type Leave,type LeaveInput} from '../shared/domain';
 const employee:Employee={id:'a',name:'A',email:'a@example.test',phone:'08123456789',unit:'KC01',position:'CS_BINA',roles:['EMPLOYEE'],active:true};
 const input:LeaveInput={category:'REGULAR',subtype:'Keluarga',reason:'Keperluan keluarga.',start:'2026-10-05',end:'2026-10-09',email:employee.email,phone:employee.phone};
 const calculate=(override:Partial<LeaveInput>={},all:Leave[]=[],limit=2,today='2026-09-01',calendar=DEFAULT_CALENDAR)=>evaluate({...input,...override},employee,all,calendar,limit,today);
@@ -51,4 +51,64 @@ describe('Benturan jadwal',()=>{
 describe('Jadwal email',()=>{
   it('reguler mulai 2 November dikirim 2 Oktober jam 08 WIB',()=>expect(reminderAt('2026-11-02','REGULAR',new Date('2026-09-29T00:00:00Z'))).toBe('2026-10-02T01:00:00.000Z'));
   it('due yang terlewati dan darurat dijadwalkan segera',()=>{const now=new Date('2026-09-29T10:00:00Z');expect(reminderAt('2026-10-29','REGULAR',now)).toBe(now.toISOString());expect(reminderAt('2026-09-29','EMERGENCY',now)).toBe(now.toISOString());});
+});
+describe('Hari libur nasional dan cuti bersama 2027',()=>{
+  it('memuat 26 hari libur dan cuti bersama 2027 pada DEFAULT_CALENDAR',()=>{
+    const dates=Object.keys(HOLIDAYS_2027);
+    expect(dates).toHaveLength(26);
+    expect(Object.keys(DEFAULT_CALENDAR.exceptions)).toHaveLength(26);
+  });
+  it('semua hari libur 2027 bukan merupakan hari kerja',()=>{
+    for(const [date,config] of Object.entries(HOLIDAYS_2027)){
+      expect(config.working).toBe(false);
+      expect(isWorking(date,DEFAULT_CALENDAR)).toBe(false);
+    }
+  });
+  it('mencakup 18 tanggal libur nasional sesuai daftar gambar',()=>{
+    expect(HOLIDAYS_2027['2027-01-01'].label).toBe('Tahun Baru 2027 Masehi');
+    expect(HOLIDAYS_2027['2027-01-05'].label).toBe('Isra Miraj Nabi Muhammad SAW');
+    expect(HOLIDAYS_2027['2027-02-06'].label).toBe('Tahun Baru Imlek 2578 Kongzili');
+    expect(HOLIDAYS_2027['2027-03-08'].label).toBe('Hari Suci Nyepi (Tahun Baru Saka 1949)');
+    expect(HOLIDAYS_2027['2027-03-10'].label).toBe('Idul Fitri 1448 Hijriah');
+    expect(HOLIDAYS_2027['2027-03-11'].label).toBe('Idul Fitri 1448 Hijriah');
+    expect(HOLIDAYS_2027['2027-03-26'].label).toBe('Wafat Yesus Kristus');
+    expect(HOLIDAYS_2027['2027-03-28'].label).toBe('Hari Kebangkitan Yesus Kristus (Paskah)');
+    expect(HOLIDAYS_2027['2027-05-01'].label).toBe('Hari Buruh Internasional');
+    expect(HOLIDAYS_2027['2027-05-06'].label).toBe('Kenaikan Yesus Kristus');
+    expect(HOLIDAYS_2027['2027-05-17'].label).toBe('Idul Adha 1448 Hijriah');
+    expect(HOLIDAYS_2027['2027-05-20'].label).toBe('Hari Raya Waisak 2571 BE');
+    expect(HOLIDAYS_2027['2027-06-01'].label).toBe('Hari Lahir Pancasila');
+    expect(HOLIDAYS_2027['2027-06-06'].label).toBe('1 Muharam Tahun Baru Islam 1449 Hijriah');
+    expect(HOLIDAYS_2027['2027-08-15'].label).toBe('Maulid Nabi Muhammad SAW');
+    expect(HOLIDAYS_2027['2027-08-17'].label).toBe('Proklamasi Kemerdekaan');
+    expect(HOLIDAYS_2027['2027-12-25'].label).toBe('Kelahiran Yesus Kristus (Natal)');
+    expect(HOLIDAYS_2027['2027-12-26'].label).toBe('Isra Miraj Nabi Muhammad SAW');
+  });
+  it('mencakup 8 tanggal cuti bersama sesuai daftar gambar',()=>{
+    expect(HOLIDAYS_2027['2027-02-05'].label).toBe('Cuti Bersama Tahun Baru Imlek 2578 Kongzili');
+    expect(HOLIDAYS_2027['2027-03-09'].label).toBe('Cuti Bersama Hari Raya Idul Fitri 1448 Hijriah');
+    expect(HOLIDAYS_2027['2027-03-12'].label).toBe('Cuti Bersama Hari Raya Idul Fitri 1448 Hijriah');
+    expect(HOLIDAYS_2027['2027-03-15'].label).toBe('Cuti Bersama Hari Raya Idul Fitri 1448 Hijriah');
+    expect(HOLIDAYS_2027['2027-03-25'].label).toBe('Cuti Bersama Wafat Yesus Kristus');
+    expect(HOLIDAYS_2027['2027-05-18'].label).toBe('Cuti Bersama Idul Adha 1448 H');
+    expect(HOLIDAYS_2027['2027-05-19'].label).toBe('Cuti Bersama Waisak 2571 BE');
+    expect(HOLIDAYS_2027['2027-12-24'].label).toBe('Cuti Bersama Kelahiran Yesus Kristus (Natal)');
+  });
+  it('menolak pengajuan cuti yang dimulai pada hari libur 2027',()=>{
+    const res=calculate({start:'2027-01-01',end:'2027-01-05'},[],2,'2026-11-01');
+    expect(res.errors.map(e=>e.code)).toContain('NON_WORKING_DAY');
+  });
+  it('melewati hari libur di tengah rentang tanpa menghitung durasinya',()=>{
+    // 2027-01-04 (Senin kerja), 2027-01-05 (Selasa libur Isra Miraj), 2027-01-06 (Rabu kerja), 2027-01-07 (Kamis kerja), 2027-01-08 (Jumat kerja)
+    const res=calculate({start:'2027-01-04',end:'2027-01-08'},[],2,'2026-11-01');
+    expect(res.days).toEqual(['2027-01-04','2027-01-06','2027-01-07','2027-01-08']);
+    expect(res.duration).toBe(4);
+    expect(res.days).not.toContain('2027-01-05');
+  });
+  it('menghitung tanggal akhir valid dengan melompati libur panjang Idul Fitri & Nyepi Maret 2027',()=>{
+    // Mulai 5 Maret 2027 (Jumat). 8-15 Maret adalah Nyepi, Cuti Bersama, Idul Fitri, Cuti Bersama, weekend.
+    // Hari kerja berikutnya: 16 (Sel), 17 (Rab), 18 (Kam), 19 (Jum).
+    const valid=getValidEndDates('2027-03-05',DEFAULT_CALENDAR);
+    expect(valid).toEqual(['2027-03-05','2027-03-16','2027-03-17','2027-03-18','2027-03-19']);
+  });
 });

@@ -12,7 +12,38 @@ export interface Leave extends LeaveInput { id:string; number:string; employeeId
 export interface Quota { position:string; label:string; limit:number; used:number; approved:number; pending:number; available:number; alreadyCounted:boolean; }
 export interface Preview { days:string[]; effectiveStart:string; effectiveEnd:string; duration:number; minimum:string; blocked:string[]; adjusted:boolean; errors:{code:string; message:string}[]; quota:Quota; fingerprint?:string; scheduledAt?:string; }
 export const ACTIVE:Status[] = ['PENDING_SDM','APPROVED'];
-export const DEFAULT_CALENDAR:Calendar = {version:1, weekdays:[1,2,3,4,5], exceptions:{}};
+export const HOLIDAYS_2027: Record<string, { working: boolean; label: string }> = {
+  // Hari Libur Nasional 2027
+  '2027-01-01': { working: false, label: 'Tahun Baru 2027 Masehi' },
+  '2027-01-05': { working: false, label: 'Isra Miraj Nabi Muhammad SAW' },
+  '2027-02-06': { working: false, label: 'Tahun Baru Imlek 2578 Kongzili' },
+  '2027-03-08': { working: false, label: 'Hari Suci Nyepi (Tahun Baru Saka 1949)' },
+  '2027-03-10': { working: false, label: 'Idul Fitri 1448 Hijriah' },
+  '2027-03-11': { working: false, label: 'Idul Fitri 1448 Hijriah' },
+  '2027-03-26': { working: false, label: 'Wafat Yesus Kristus' },
+  '2027-03-28': { working: false, label: 'Hari Kebangkitan Yesus Kristus (Paskah)' },
+  '2027-05-01': { working: false, label: 'Hari Buruh Internasional' },
+  '2027-05-06': { working: false, label: 'Kenaikan Yesus Kristus' },
+  '2027-05-17': { working: false, label: 'Idul Adha 1448 Hijriah' },
+  '2027-05-20': { working: false, label: 'Hari Raya Waisak 2571 BE' },
+  '2027-06-01': { working: false, label: 'Hari Lahir Pancasila' },
+  '2027-06-06': { working: false, label: '1 Muharam Tahun Baru Islam 1449 Hijriah' },
+  '2027-08-15': { working: false, label: 'Maulid Nabi Muhammad SAW' },
+  '2027-08-17': { working: false, label: 'Proklamasi Kemerdekaan' },
+  '2027-12-25': { working: false, label: 'Kelahiran Yesus Kristus (Natal)' },
+  '2027-12-26': { working: false, label: 'Isra Miraj Nabi Muhammad SAW' },
+
+  // Cuti Bersama 2027
+  '2027-02-05': { working: false, label: 'Cuti Bersama Tahun Baru Imlek 2578 Kongzili' },
+  '2027-03-09': { working: false, label: 'Cuti Bersama Hari Raya Idul Fitri 1448 Hijriah' },
+  '2027-03-12': { working: false, label: 'Cuti Bersama Hari Raya Idul Fitri 1448 Hijriah' },
+  '2027-03-15': { working: false, label: 'Cuti Bersama Hari Raya Idul Fitri 1448 Hijriah' },
+  '2027-03-25': { working: false, label: 'Cuti Bersama Wafat Yesus Kristus' },
+  '2027-05-18': { working: false, label: 'Cuti Bersama Idul Adha 1448 H' },
+  '2027-05-19': { working: false, label: 'Cuti Bersama Waisak 2571 BE' },
+  '2027-12-24': { working: false, label: 'Cuti Bersama Kelahiran Yesus Kristus (Natal)' },
+};
+export const DEFAULT_CALENDAR:Calendar = {version:1, weekdays:[1,2,3,4,5], exceptions:{...HOLIDAYS_2027}};
 export const statusLabel:Record<Status,string> = {DRAFT:'Draft',PENDING_SDM:'Menunggu review',APPROVED:'Disetujui',REJECTED:'Ditolak',WITHDRAWN:'Ditarik'};
 export const positionLabel = (code:string) => POSITIONS.find(p=>p[0]===code)?.[1] ?? code;
 export const dateOnly = (now:Date = new Date()) => new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Jakarta',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
