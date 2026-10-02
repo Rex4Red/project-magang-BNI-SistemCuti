@@ -1,10 +1,12 @@
+export const PASSWORD_PATTERN = /^(?=.*[A-Za-z])(?=.*[0-9]).{6,200}$/;
+export const PASSWORD_HINT = 'Minimal 6 karakter, kombinasi huruf dan angka. Simbol tidak wajib.';
 export const POSITIONS = [
   ['CS_BINA','CS BINA',2],['TELLER','Teller',4],['CS_FTE','CS FTE',2],['BBO','BBO',2],['BM','BM',2],['BTRM','BTRM',3],
   ['ARM','ARM',2],['PRM','PRM',2],['BTN','BTN',2],['BMB','BMB',2],['BSM','BSM',2],['CBRS','CBRS',2],['CBRS_SPV','CBRS SPV',2],['CLEANING_STAFF','Cleaning Staff',2],
 ] as const;
 export type Role = 'EMPLOYEE'|'SDM'|'ADMIN';
 export type Status = 'DRAFT'|'PENDING_SDM'|'APPROVED'|'REJECTED'|'WITHDRAWN';
-export interface Employee { id:string; name:string; email:string; phone:string; position:string; unit:string; roles:Role[]; active:boolean; }
+export interface Employee { id:string; name:string; email:string; phone:string; position:string; unit:string; roles:Role[]; active:boolean; deletedAt?:string; }
 export interface Calendar { version:number; weekdays:number[]; exceptions:Record<string, {working:boolean; label:string}>; }
 export interface Policy { calendar:Calendar; quotas:Record<string,Record<string,number>>; }
 export interface LeaveInput { category:'REGULAR'|'EMERGENCY'; subtype:string; reason:string; start:string; end:string; email:string; phone:string; }

@@ -8,7 +8,7 @@ import {resolve} from 'node:path';
 import {z,ZodError} from 'zod';
 import type {Database} from './db';
 import {AppError,act,audit,canRead,checkEmail,digest,employees,ensure,getPolicy,inputSchema,mutate,preview,requests,saveRequest,submit} from './service';
-import {ACTIVE,HOLIDAYS_2027,POSITIONS,blockedDays,dateOnly,evaluate,limitFor,quotaFor,validDate,type Employee,type Leave,type Policy} from '../shared/domain';
+import {ACTIVE,HOLIDAYS_2027,PASSWORD_PATTERN,PASSWORD_HINT,POSITIONS,blockedDays,dateOnly,evaluate,limitFor,quotaFor,validDate,type Employee,type Leave,type Policy} from '../shared/domain';
 declare global {namespace Express {interface Request {actor:Employee;}}}
 export function createApp(db:Database,options:{demo:boolean;now?:()=>Date;origin?:string}) {
   const app=express();const now=options.now??(()=>new Date());const production=process.env.NODE_ENV==='production';
@@ -47,11 +47,25 @@ export function createApp(db:Database,options:{demo:boolean;now?:()=>Date;origin
   app.use('/api/admin',(req,_res,next)=>{try{ensure(req.actor.roles.includes('ADMIN'),'Akses administrator diperlukan.',403);next();}catch(e){next(e);}});
   app.get('/api/admin',async(req,res)=>{const list=(await employees(db)).filter(e=>e.unit===req.actor.unit);const jobs=(await db.query('SELECT id,kind,due_at,state,attempts,last_error FROM mail_jobs WHERE unit_id=$1 ORDER BY created_at DESC LIMIT 100',[req.actor.unit])).rows;const logs=(await db.query('SELECT * FROM audit WHERE unit_id=$1 ORDER BY at DESC LIMIT 100',[req.actor.unit])).rows;res.json({employees:list,policy:await getPolicy(db,req.actor.unit),jobs,audit:logs});});
   app.post('/api/admin/employee',async(req,res)=>{
-    const body=z.object({id:z.string().optional(),name:z.string().trim().min(2).max(100),email:z.email().max(200),phone:z.string().min(8).max(20),position:z.enum(POSITIONS.map(p=>p[0]) as [string,...string[]]),roles:z.array(z.enum(['EMPLOYEE','SDM','ADMIN'])).min(1),active:z.boolean(),password:z.string().min(12).max(200).optional()}).parse(req.body);
+    const body=z.object({id:z.string().optional(),name:z.string().trim().min(2).max(100),email:z.email().max(200),phone:z.string().min(8).max(20),position:z.enum(POSITIONS.map(p=>p[0]) as [string,...string[]]),roles:z.array(z.enum(['EMPLOYEE','SDM','ADMIN'])).min(1),active:z.boolean(),password:z.string().max(200).regex(PASSWORD_PATTERN,PASSWORD_HINT).optional()}).parse(req.body);
     res.json(await mutate(db,req.actor,req.get('idempotency-key')??'',{action:'employee',...body},async tx=>{const existing=body.id?(await employees(tx)).find(e=>e.id===body.id&&e.unit===req.actor.unit):undefined;if(body.id)ensure(existing,'Pegawai tidak ditemukan.',404);if(!body.id)ensure(body.password,'Kata sandi awal wajib diisi.');if(body.id===req.actor.id)ensure(body.active&&body.roles.includes('ADMIN'),'Anda tidak dapat menonaktifkan akses admin sendiri.');
       if(existing&&(existing.position!==body.position||!body.active))ensure(!(await requests(tx,req.actor.unit)).some(r=>r.employeeId===existing.id&&ACTIVE.includes(r.status)&&r.effectiveEnd>=dateOnly(now())),'Selesaikan pengajuan aktif sebelum mengubah posisi/menonaktifkan.');
       const {password,id,...fields}=body;const e:Employee={...fields,email:body.email.toLowerCase(),id:existing?.id??randomUUID(),unit:req.actor.unit};const pw=password?await hash(password,12):(await tx.query('SELECT password_hash FROM employees WHERE id=$1',[e.id])).rows[0].password_hash;
       await tx.query('INSERT INTO employees(id,email,password_hash,data) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET email=excluded.email,password_hash=excluded.password_hash,data=excluded.data',[e.id,e.email,pw,e]);await audit(tx,req.actor,'EMPLOYEE_UPDATE',e.id);return e;}));
+  });
+  app.delete('/api/admin/employee/:id',async(req,res)=>{
+    res.json(await mutate(db,req.actor,req.get('idempotency-key')??'',{action:'deleteEmployee',id:req.params.id},async tx=>{
+      const employee=(await employees(tx)).find(e=>e.id===req.params.id&&e.unit===req.actor.unit);
+      ensure(employee,'Karyawan tidak ditemukan.',404);
+      ensure(employee!.id!==req.actor.id,'Anda tidak dapat menghapus akun sendiri.',409);
+      const leaves=await requests(tx,req.actor.unit);
+      ensure(!leaves.some(r=>r.employeeId===employee!.id&&(r.status==='PENDING_SDM'||(r.status==='APPROVED'&&r.effectiveEnd>=dateOnly(now())))),'Selesaikan pengajuan yang menunggu review atau cuti aktif sebelum menghapus karyawan.',409);
+      const deleted={...employee!,active:false,deletedAt:now().toISOString()};
+      await tx.query('UPDATE employees SET data=$1 WHERE id=$2',[deleted,deleted.id]);
+      await tx.query('DELETE FROM sessions WHERE employee_id=$1',[deleted.id]);
+      await audit(tx,req.actor,'EMPLOYEE_DELETE',deleted.id);
+      return {ok:true};
+    }));
   });
   app.post('/api/admin/calendar',async(req,res)=>{
     const body=z.object({date:z.string().refine(validDate),working:z.boolean(),label:z.string().trim().min(2).max(150),remove:z.boolean().optional()}).parse(req.body);

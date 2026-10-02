@@ -2,13 +2,35 @@ import {test,expect,type Page} from '@playwright/test';
 import {mkdirSync} from 'node:fs';
 import {addMonths,addDays,blockedDays,isWorking,DEFAULT_CALENDAR} from '../../shared/domain';
 async function login(page:Page,role:string){await page.goto('/');await page.getByRole('button',{name:role,exact:true}).click();await page.getByRole('button',{name:'Masuk',exact:true}).click();await expect(page.getByRole('heading',{name:'Ringkasan',exact:true})).toBeVisible();}
-test('SDM dashboard, filter calendar and mobile layout',async({page})=>{
+test('admin creates an employee with a six-character alphanumeric password',async({page,browser})=>{
+  await login(page,'Admin');await page.getByRole('button',{name:'Administrasi',exact:true}).click();
+  await page.getByRole('button',{name:'Tambah karyawan',exact:true}).click();
+  const form=page.getByRole('dialog',{name:'Tambah karyawan',exact:true});
+  await form.getByLabel('Nama lengkap').fill('Karyawan Uji Password');await form.getByLabel('Email',{exact:true}).fill('password-ui@demo.bni.local');await form.getByLabel('Nomor HP').fill('081234567899');
+  const password=form.getByLabel('Kata sandi awal');await expect(password).toHaveAttribute('minlength','6');
+  await password.fill('abcdef');expect(await password.evaluate((el:HTMLInputElement)=>el.checkValidity())).toBe(false);
+  await password.fill('abc123');expect(await password.evaluate((el:HTMLInputElement)=>el.checkValidity())).toBe(true);
+  await form.getByRole('button',{name:'Simpan karyawan'}).click();await expect(form).toHaveCount(0);
+  const context=await browser.newContext();const employee=await context.newPage();await employee.goto('/');
+  await employee.getByLabel('Email karyawan').fill('password-ui@demo.bni.local');await employee.getByLabel('Kata sandi',{exact:true}).fill('abc123');await employee.getByRole('button',{name:'Masuk',exact:true}).click();
+  await expect(employee.getByRole('heading',{name:'Ringkasan',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Hapus Administrator',exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'Hapus Karyawan Uji Password',exact:true}).click();
+  const deletion=page.getByRole('dialog',{name:'Hapus karyawan?',exact:true});await expect(deletion.getByText('Karyawan Uji Password',{exact:true})).toBeVisible();
+  await deletion.getByRole('button',{name:'Batal',exact:true}).click();await expect(deletion).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Hapus Karyawan Uji Password',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Hapus Karyawan Uji Password',exact:true}).click();
+  await deletion.getByRole('button',{name:'Hapus karyawan',exact:true}).click();await expect(deletion).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Hapus Karyawan Uji Password',exact:true})).toHaveCount(0);
+  expect((await employee.request.get('/api/me')).status()).toBe(401);await context.close();
+});
+test('SDM dashboard, filter calendar and mobile layout',async({page},testInfo)=>{
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
   await page.setViewportSize({width:1440,height:1080});await login(page,'SDM');await expect(page.locator('.stats-grid')).toBeVisible();
-  mkdirSync('artifacts',{recursive:true});await page.screenshot({path:'artifacts/dashboard-desktop.png',fullPage:true});
+  mkdirSync('artifacts',{recursive:true});await page.screenshot({path:testInfo.outputPath('dashboard-desktop.png'),fullPage:true});
   await page.getByRole('button',{name:'Kalender cuti',exact:true}).click();await expect(page.locator('.calendar-grid')).toBeVisible();await page.getByLabel('Filter posisi kalender').selectOption('CS_BINA');
   await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'Buka menu'}).click();await page.locator('nav').getByRole('button',{name:'Ringkasan',exact:true}).click();
-  await expect(page.locator('.stats-grid')).toBeVisible();await page.screenshot({path:'artifacts/dashboard-mobile.png',fullPage:true,animations:'disabled'});
+  await expect(page.locator('.stats-grid')).toBeVisible();await page.screenshot({path:testInfo.outputPath('dashboard-mobile.png'),fullPage:true,animations:'disabled'});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(errors).toEqual([]);
 });
 test('employee submits regular leave, SDM confirms and approves, email captured',async({page,browser})=>{
@@ -20,6 +42,11 @@ test('employee submits regular leave, SDM confirms and approves, email captured'
   await page.getByLabel('Tanggal mulai',{exact:true}).fill(start);await page.getByLabel('Tanggal akhir',{exact:true}).fill(start);
   await expect(page.getByRole('button',{name:'Tinjau pengajuan'})).toBeEnabled();await page.getByRole('button',{name:'Tinjau pengajuan'}).click();await page.getByRole('button',{name:'Kirim pengajuan'}).click();
   const dialog=page.getByRole('dialog');await expect(dialog.getByText('Menunggu review',{exact:true})).toBeVisible();const title=await dialog.locator('.modal-header h2').innerText();const number=title.replace('Detail ','');
+  await dialog.getByRole('button',{name:'Tarik pengajuan',exact:true}).click();
+  await expect(page.getByRole('dialog',{name:'Tarik pengajuan ini?',exact:true})).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog',{name:'Detail '+number,exact:true})).toBeVisible();
+  await expect(dialog.getByText('Menunggu review',{exact:true})).toBeVisible();
   const other=await browser.newContext();const hr=await other.newPage();await login(hr,'SDM');await hr.getByLabel('Bulan monitoring').fill(month);await hr.locator('nav').getByRole('button',{name:/Pengajuan cuti/}).click();await expect(hr.getByLabel('Filter bulan pengajuan')).toHaveValue('');
   await expect(hr.getByRole('button',{name:'Lihat Alya Rahma '+number,exact:true})).toBeVisible();
   await hr.getByLabel('Filter bulan pengajuan').selectOption(month);
@@ -28,7 +55,21 @@ test('employee submits regular leave, SDM confirms and approves, email captured'
   await expect(hr.locator('.table-footer')).toContainText('Semua bulan');
   await expect(hr.getByRole('link',{name:'Unduh laporan'})).toHaveAttribute('href','/api/reports.csv?month=all');
   await hr.getByLabel('Cari pengajuan').fill(number);await hr.getByRole('button',{name:'Lihat Alya Rahma '+number,exact:true}).click();
-  await expect(hr.getByRole('button',{name:'Setujui pengajuan',exact:true})).toBeDisabled();await hr.getByRole('button',{name:'Jadi mengambil cuti'}).click();await expect(hr.getByText('Karyawan telah mengonfirmasi jadi mengambil cuti.')).toBeVisible();await hr.getByRole('button',{name:'Setujui pengajuan',exact:true}).click();await hr.getByRole('button',{name:'Konfirmasi keputusan'}).click();await expect(hr.getByRole('dialog').getByText('Disetujui',{exact:true})).toBeVisible();
+  await expect(hr.getByRole('button',{name:'Setujui pengajuan',exact:true})).toBeDisabled();await hr.getByRole('button',{name:'Jadi mengambil cuti'}).click();await expect(hr.getByText('Karyawan telah mengonfirmasi jadi mengambil cuti.')).toBeVisible();
+  await hr.getByRole('button',{name:'Tolak pengajuan',exact:true}).click();
+  const rejection=hr.getByRole('dialog',{name:'Tolak pengajuan ini?',exact:true});await expect(rejection).toBeVisible();
+  await expect(rejection.getByRole('button',{name:'Konfirmasi keputusan'})).toBeDisabled();
+  await rejection.getByRole('button',{name:'Kembali',exact:true}).click();
+  await expect(hr.getByRole('dialog',{name:'Detail '+number,exact:true})).toBeVisible();
+  await hr.getByRole('button',{name:'Setujui pengajuan',exact:true}).click();
+  const approval=hr.getByRole('dialog',{name:'Setujui pengajuan ini?',exact:true});await expect(approval).toBeVisible();
+  await expect(hr.getByRole('dialog')).toHaveCount(1);await expect(approval.getByText('Aktivitas pengajuan',{exact:true})).toHaveCount(0);
+  await expect(approval.getByRole('button',{name:'Tutup dialog'})).toBeFocused();
+  await hr.setViewportSize({width:390,height:844});
+  await expect.poll(()=>approval.evaluate(el=>{const rect=el.getBoundingClientRect();return rect.left>=0&&rect.right<=innerWidth&&el.scrollWidth<=el.clientWidth;})).toBe(true);
+  await hr.screenshot({path:'artifacts/confirmation-mobile.png',animations:'disabled'});
+  await hr.setViewportSize({width:1440,height:1080});await hr.screenshot({path:'artifacts/confirmation-desktop.png',animations:'disabled'});
+  await approval.getByRole('button',{name:'Konfirmasi keputusan'}).click();await expect(hr.getByRole('dialog').getByText('Disetujui',{exact:true})).toBeVisible();
   await page.reload();await page.getByLabel('Bulan monitoring').fill(month);await page.locator('nav').getByRole('button',{name:/Pengajuan saya/}).click();await page.getByLabel('Cari pengajuan').fill(number);await expect(page.locator('tbody').getByText('Disetujui',{exact:true})).toBeVisible();
   await other.close();
 });

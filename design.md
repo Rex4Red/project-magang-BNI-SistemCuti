@@ -12,6 +12,10 @@ Form harus menjawab tiga pertanyaan sebelum karyawan menekan Kirim: kapan cuti b
 
 Bahasa antarmuka menggunakan istilah yang familiar: “Ajukan cuti”, “Menunggu review”, “Hari kerja”, dan “Tanggal efektif”. Istilah teknis seperti reservasi, job, outbox, dan idempotensi tidak ditampilkan kepada karyawan.
 
+Konfirmasi persetujuan, penolakan, dan penarikan pengajuan muncul dalam pop-up ringkas terpisah dari detail. Pop-up menampilkan nama karyawan, nomor pengajuan, tanggal efektif, dan durasi agar keputusan mudah diperiksa. Alasan penolakan diisi di pop-up. Kembali, tombol tutup, dan Escape mengembalikan pengguna ke detail; keputusan baru disimpan setelah menekan Konfirmasi keputusan.
+
+Direktori karyawan menyediakan Edit dan Hapus. Hapus meminta konfirmasi nama dan email, menghilangkan karyawan dari daftar, serta menutup akses login dan sesi aktif. Data disimpan sebagai arsip agar riwayat pengajuan dan kuota historis tetap utuh. Pengajuan yang menunggu review atau cuti disetujui yang belum selesai harus diselesaikan terlebih dahulu. Administrator tidak dapat menghapus akun sendiri.
+
 Kuota orang per bulan, durasi hari kerja per permohonan, dan jumlah orang yang cuti pada satu tanggal adalah metrik berbeda. Kuota bulanan menghitung karyawan berbeda, termasuk yang tanggal cutinya sudah selesai pada bulan itu. Batas orang bersamaan menggunakan angka kuota posisi yang sama.
 
 ## 2. Struktur navigasi

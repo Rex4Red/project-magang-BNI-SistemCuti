@@ -13,7 +13,39 @@ beforeEach(async()=>{for(const table of ['mail_deliveries','mail_jobs','requests
 afterAll(async()=>{await db.close();});
 async function create(actor=user,override:Partial<LeaveInput>={},key=randomUUID()) {const body={...input,...override};const p=await preview(db,actor,body,clock);return submit(db,actor,{...body,fingerprint:p.fingerprint,acceptAdjustment:true},key,clock);}
 async function login(account='karyawan'){const agent=supertest.agent(app);await agent.post('/api/login').set('X-Cuti-Client','web').send({email:account+'@demo.bni.local',password:'BniCuti!2026'}).expect(200);return agent;}
+it('creates and resets an employee password with six letters and digits',async()=>{
+  const admin=await login('admin');
+  const body={name:'Uji Kata Sandi',email:'password-test@demo.bni.local',phone:'081234567899',position:'CS_BINA',roles:['EMPLOYEE'],active:true};
+  for(const password of ['abc12','abcdef','123456'])await admin.post('/api/admin/employee').set('X-Cuti-Client','web').set('Idempotency-Key',randomUUID()).send({...body,password}).expect(422);
+  const created=await admin.post('/api/admin/employee').set('X-Cuti-Client','web').set('Idempotency-Key',randomUUID()).send({...body,password:'abc123'}).expect(200);
+  const employee=supertest.agent(app);
+  await employee.post('/api/login').set('X-Cuti-Client','web').send({email:body.email,password:'abc123'}).expect(200);
+  await admin.post('/api/admin/employee').set('X-Cuti-Client','web').set('Idempotency-Key',randomUUID()).send({...body,id:created.body.id,password:'cuti12'}).expect(200);
+  await employee.post('/api/login').set('X-Cuti-Client','web').send({email:body.email,password:'cuti12'}).expect(200);
+  await admin.post('/api/admin/employee').set('X-Cuti-Client','web').set('Idempotency-Key',randomUUID()).send({...body,id:created.body.id}).expect(200);
+  await employee.post('/api/login').set('X-Cuti-Client','web').send({email:body.email,password:'cuti12'}).expect(200);
+});
 it('persists five days using one person slot and atomic mail/audit',async()=>{const r=await create();expect(r.duration).toBe(5);expect((await requests(db)).length).toBe(1);expect((await db.query('SELECT * FROM mail_jobs')).rows.length).toBe(1);expect((await db.query('SELECT * FROM audit')).rows.length).toBe(1);const p=await preview(db,userB,{...input,start:'2026-10-20',end:'2026-10-20'},clock);expect(p.quota.available).toBe(1);});
+it('deletes employees within the unit, revokes access and preserves leave history',async()=>{
+  const admin=await login('admin');const employeeAgent=await login();
+  const remove=(agent:ReturnType<typeof supertest.agent>,id:string,key=randomUUID())=>agent.delete('/api/admin/employee/'+id).set('X-Cuti-Client','web').set('Idempotency-Key',key);
+  await remove(employeeAgent,user.id).expect(403);await remove(admin,'admin').expect(409);
+  const body={name:'Uji Hapus',email:'delete-test@demo.bni.local',phone:'081234567899',position:'CS_BINA',roles:['EMPLOYEE'],active:true,password:'abc123'};
+  const created=await admin.post('/api/admin/employee').set('X-Cuti-Client','web').set('Idempotency-Key',randomUUID()).send(body).expect(200);
+  const target=created.body as Employee;const targetAgent=supertest.agent(app);
+  await targetAgent.post('/api/login').set('X-Cuti-Client','web').send({email:body.email,password:body.password}).expect(200);
+  const leave=await create(target);await remove(admin,target.id).expect(409);
+  const rejected=await act(db,sdm,leave.id,'decision',{version:leave.version,outcome:'REJECTED',reason:'Dibatalkan untuk pengujian.'},randomUUID(),clock);
+  const key=randomUUID();await remove(admin,target.id,key).expect(200);await remove(admin,target.id,key).expect(200);
+  expect((await employees(db)).some(e=>e.id===target.id)).toBe(false);
+  expect((await requests(db)).find(r=>r.id===leave.id)).toEqual(rejected);
+  expect((await db.query('SELECT * FROM audit WHERE action=$1 AND object_id=$2',['EMPLOYEE_DELETE',target.id])).rows).toHaveLength(1);
+  await targetAgent.get('/api/me').expect(401);await targetAgent.post('/api/login').set('X-Cuti-Client','web').send({email:body.email,password:body.password}).expect(401);
+  await admin.post('/api/admin/employee').set('X-Cuti-Client','web').set('Idempotency-Key',randomUUID()).send({...body,id:target.id}).expect(404);
+  const outsider={...target,id:randomUUID(),email:'other-unit-delete@demo.bni.local',unit:'OTHER'};
+  await db.query('INSERT INTO employees(id,email,password_hash,data) VALUES($1,$2,$3,$4)',[outsider.id,outsider.email,'unused',outsider]);
+  await remove(admin,outsider.id).expect(404);expect((await employees(db)).some(e=>e.id===outsider.id)).toBe(true);
+});
 it('serializes two different people racing for one remaining slot',async()=>{await create(user,{start:'2026-10-01',end:'2026-10-01'});const third={...user,id:'third',email:'third@demo.bni.local'};await db.query('INSERT INTO employees(id,email,password_hash,data) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET data=excluded.data',[third.id,third.email,'test',third]);const results=await Promise.allSettled([create(userB,{start:'2026-10-05',end:'2026-10-05'}),create(third,{start:'2026-10-20',end:'2026-10-20'})]);expect(results.filter(x=>x.status==='fulfilled')).toHaveLength(1);expect((await requests(db)).length).toBe(2);});
 it('deduplicates a repeated submission after timeout',async()=>{const p=await preview(db,user,input,clock);const body={...input,fingerprint:p.fingerprint};const key=randomUUID();const [a,b]=await Promise.all([submit(db,user,body,key,clock),submit(db,user,body,key,clock)]);expect(a.id).toBe(b.id);expect((await requests(db)).length).toBe(1);});
 it('rejects an idempotency key used with different payload',async()=>{const key=randomUUID();await create(user,{},key);await expect(create(user,{start:'2026-10-20',end:'2026-10-20'},key)).rejects.toMatchObject({status:409});});

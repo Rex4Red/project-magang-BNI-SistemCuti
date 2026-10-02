@@ -69,3 +69,6 @@ th{font-size:11px;color:#6b7e85}td{padding:16px 20px;font-size:13px}td>small{fon
 .datepicker-notice svg{flex-shrink:0;color:#cb7c63}
 .datepicker-foot{display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:8px;border-top:1px solid #edf1f3}
 
+.modal.modal-compact{width:520px;max-width:100%}.decision-summary{display:flex;flex-direction:column;gap:8px;margin-bottom:24px;font-size:13px;line-height:1.6}.decision-summary strong{font-size:16px}.decision-summary span{color:#60777f}
+.employee-actions{display:flex;align-items:center;gap:8px}.employee-actions .text-button{justify-content:center;min-width:60px;min-height:36px;padding:7px 12px;border:1px solid #b7d6da;border-radius:6px;background:#f0f7f8;color:var(--teal)}.employee-actions .text-button:hover{background:#e3f0f2}.employee-actions .delete-link{border-color:#e5bcb9;background:#fff5f4;color:#ad302b}.employee-actions .delete-link:hover{background:#fbe8e6}
+.stats-grid{grid-template-columns:repeat(3,minmax(0,1fr))}@media(max-width:760px){.stats-grid{grid-template-columns:1fr}}

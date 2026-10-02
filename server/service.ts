@@ -6,7 +6,7 @@ import {ACTIVE,DEFAULT_CALENDAR,POSITIONS,addMonths,dateOnly,evaluate,limitFor,r
 export class AppError extends Error { constructor(public status:number,message:string,public code='INVALID',public details?:unknown){super(message);} }
 export const ensure=(ok:unknown,message:string,status=422,code='INVALID',details?:unknown)=>{if(!ok)throw new AppError(status,message,code,details);};
 export const inputSchema=z.object({category:z.enum(['REGULAR','EMERGENCY']),subtype:z.string().trim().min(2).max(120),reason:z.string().trim().min(10).max(2000),start:z.string().refine(validDate),end:z.string().refine(validDate),email:z.email().max(200),phone:z.string().regex(/^\+?[\d ()-]{8,20}$/)});
-export async function employees(db:SQL):Promise<Employee[]> {return (await db.query('SELECT data FROM employees')).rows.map(r=>r.data);}
+export async function employees(db:SQL):Promise<Employee[]> {return (await db.query("SELECT data FROM employees WHERE data->>'deletedAt' IS NULL")).rows.map(r=>r.data);}
 export async function requests(db:SQL,unit?:string):Promise<Leave[]> {return (await db.query('SELECT data FROM requests'+(unit?' WHERE unit_id=$1':''),unit?[unit]:[])).rows.map(r=>r.data);}
 export async function getPolicy(db:SQL,unit:string):Promise<Policy> {const r=(await db.query('SELECT policy FROM units WHERE id=$1',[unit])).rows[0];ensure(r,'Unit tidak tersedia.',404);return r.policy;}
 export async function saveRequest(db:SQL,r:Leave) {await db.query(`INSERT INTO requests(id,employee_id,unit_id,position,status,month,data) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(id) DO UPDATE SET status=excluded.status,month=excluded.month,data=excluded.data`,[r.id,r.employeeId,r.unit,r.position,r.status,r.effectiveStart.slice(0,7),r]);}
