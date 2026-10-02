@@ -33,7 +33,19 @@ export default function App(){
   const [requestMonth,setRequestMonth]=useState('');const [month,setMonth]=useState(getInitialMonth);const [data,setData]=useState<any>(null);const [refresh,setRefresh]=useState(0);const [error,setError]=useState('');const [toast,setToast]=useState('');const [selected,setSelected]=useState<Leave|null>(null);const [draft,setDraft]=useState<Leave|null>(null);const [menu,setMenu]=useState(false);const [loading,setLoading]=useState(false);
   const sdm=user?.roles.includes('SDM');const admin=user?.roles.includes('ADMIN');
   useEffect(()=>{Promise.all([api('/config').then(setConfig),api<Employee>('/me').then(setUser).catch(()=>{})]).finally(()=>setBoot(false));},[]);
-  useEffect(()=>{if(!user)return;let alive=true;setLoading(true);api('/dashboard?month='+month).then(d=>{if(alive){setData(d);setError('');}}).catch(e=>{if(e.status===401)setUser(null);else setError(e.message);}).finally(()=>{if(alive)setLoading(false);});return()=>{alive=false;};},[user,month,refresh]);
+  useEffect(()=>{
+    if(!user)return;let alive=true;let fetching=false;
+    async function load(background=false){
+      if(fetching||!alive)return;fetching=true;if(!background)setLoading(true);
+      try{const latest=await api('/dashboard?month='+month);if(alive){setData(latest);setError('');}}
+      catch(e){if(alive){const failure=e as ApiError;if(failure.status===401){setUser(null);setData(null);setSelected(null);}else if(!background)setError(failure.message);}}
+      finally{fetching=false;if(alive&&!background)setLoading(false);}
+    }
+    const updateVisible=()=>{if(document.visibilityState==='visible')void load(true);};
+    void load();const timer=setInterval(updateVisible,5000);
+    window.addEventListener('focus',updateVisible);document.addEventListener('visibilitychange',updateVisible);
+    return()=>{alive=false;clearInterval(timer);window.removeEventListener('focus',updateVisible);document.removeEventListener('visibilitychange',updateVisible);};
+  },[user,month,refresh,page]);
   useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(''),4500);return()=>clearTimeout(t);},[toast]);
   useEffect(()=>{if(!user)return;const id=new URLSearchParams(location.search).get('request');if(id)api<Leave>('/leave-requests/'+id).then(setSelected).catch(e=>setError(e.message));},[user]);
   useEffect(()=>{if(month){try{sessionStorage.setItem('bni_cuti_month',month);}catch{}}},[month]);
