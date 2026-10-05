@@ -72,3 +72,38 @@ th{font-size:11px;color:#6b7e85}td{padding:16px 20px;font-size:13px}td>small{fon
 .modal.modal-compact{width:520px;max-width:100%}.decision-summary{display:flex;flex-direction:column;gap:8px;margin-bottom:24px;font-size:13px;line-height:1.6}.decision-summary strong{font-size:16px}.decision-summary span{color:#60777f}
 .employee-actions{display:flex;align-items:center;gap:8px}.employee-actions .text-button{justify-content:center;min-width:60px;min-height:36px;padding:7px 12px;border:1px solid #b7d6da;border-radius:6px;background:#f0f7f8;color:var(--teal)}.employee-actions .text-button:hover{background:#e3f0f2}.employee-actions .delete-link{border-color:#e5bcb9;background:#fff5f4;color:#ad302b}.employee-actions .delete-link:hover{background:#fbe8e6}
 .stats-grid{grid-template-columns:repeat(3,minmax(0,1fr))}@media(max-width:760px){.stats-grid{grid-template-columns:1fr}}
+
+/* Enhanced Employee Confirmation Styles */
+.confirmation-box{background:#fbfdfc;border:1px solid #dce8e4;border-radius:12px;padding:20px;margin-top:24px;box-shadow:0 2px 8px #173b4508;transition:all .2s ease}
+.confirmation-box.confirmed{background:#f3faf6;border-color:#bfe5d5}
+.confirmation-box.declined{background:#fdf5f4;border-color:#f2d2cc}
+.confirmation-box-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+.confirmation-title-wrap{display:flex;align-items:flex-start;gap:10px}
+.confirmation-box-icon{width:32px;height:32px;border-radius:8px;background:#e5f3f0;color:var(--teal);display:grid;place-items:center;flex-shrink:0}
+.confirmation-box h4{font-size:14px;font-weight:700;margin:0 0 3px;color:#20424b}
+.confirmation-box-subtitle{font-size:11px;color:#7e939a;line-height:1.5;margin:0}
+.quick-contact-strip{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff;border:1px solid #e3ebed;border-radius:8px;padding:10px 14px;margin-bottom:16px;flex-wrap:wrap}
+.quick-contact-info{display:flex;align-items:center;gap:7px;font-size:12px}
+.quick-contact-info small{color:#889ca2;font-size:11px}
+.quick-contact-info strong{color:#2a454d;font-weight:650}
+.quick-contact-actions{display:flex;align-items:center;gap:8px}
+.quick-contact-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:6px;font-size:11px;font-weight:600;text-decoration:none;transition:all .15s ease}
+.quick-contact-btn.wa{background:#e7f8ef;color:#15803d;border:1px solid #bdf0d0}
+.quick-contact-btn.wa:hover{background:#25d366;color:#fff;border-color:#25d366}
+.quick-contact-btn.tel{background:#f0f6f8;color:var(--teal);border:1px solid #d4e6ea}
+.quick-contact-btn.tel:hover{background:var(--teal);color:#fff;border-color:var(--teal)}
+.channel-chips{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:6px}
+.channel-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border-radius:20px;font-size:11px;font-weight:550;border:1px solid #dce5e8;background:#fff;color:#4c6b75;cursor:pointer;transition:all .15s ease}
+.channel-chip:hover{border-color:#b0cacf;background:#f3f7f8}
+.channel-chip.selected{background:var(--teal);color:#fff;border-color:var(--teal);font-weight:650}
+.confirmation-actions{display:flex;align-items:center;gap:10px;margin-top:18px;padding-top:14px;border-top:1px solid #e9f0ee;flex-wrap:wrap}
+.confirm-yes-btn{background:#0e8362;color:#fff;border:1px solid #0e8362;border-radius:8px;display:inline-flex;align-items:center;gap:7px;padding:9px 16px;font-size:12px;font-weight:650;cursor:pointer;transition:background .15s}
+.confirm-yes-btn:hover{background:#0b6b4f}
+.confirm-no-btn{background:#fff;color:#ad302b;border:1px solid #f1cfcb;border-radius:8px;display:inline-flex;align-items:center;gap:7px;padding:9px 16px;font-size:12px;font-weight:600;cursor:pointer;transition:background .15s}
+.confirm-no-btn:hover{background:#fdf2f0;border-color:#e4aba5}
+.confirmation-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:8px;margin-top:8px;flex-wrap:wrap}
+.confirmation-banner.confirmed{background:#eaf6f0;border:1px solid #c5ebd6;color:#156a47}
+.confirmation-banner.declined{background:#fdf2f0;border:1px solid #f1cfcb;color:#9b322a}
+.confirmation-banner-content{display:flex;align-items:center;gap:10px}
+.confirmation-banner-text strong{font-size:12px;display:block}
+.confirmation-banner-text small{font-size:11px;opacity:.88;display:block;margin-top:2px}

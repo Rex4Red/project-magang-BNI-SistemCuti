@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState,type FormEvent,type ReactNode} from 'react';
-import {ArrowDownToLine,ArrowRight,ArrowUpRight,Bell,CalendarDays,Check,CheckCheck,ChevronLeft,ChevronRight,Clock3,FileText,Home,Info,LayoutGrid,LogOut,Menu,Plus,Search,Settings2,ShieldCheck,Users,X,Mail,Send,BriefcaseBusiness,CheckCircle2,AlertCircle,SlidersHorizontal,Leaf,Save} from 'lucide-react';
+import {ArrowDownToLine,ArrowRight,ArrowUpRight,Bell,CalendarDays,Check,CheckCheck,ChevronLeft,ChevronRight,Clock3,FileText,Home,Info,LayoutGrid,LogOut,Menu,Plus,Search,Settings2,ShieldCheck,Users,X,Mail,Send,BriefcaseBusiness,CheckCircle2,AlertCircle,SlidersHorizontal,Leaf,Save,Phone,MessageCircle,RotateCcw,XCircle,UserCheck} from 'lucide-react';
 import {ACTIVE,PASSWORD_PATTERN,PASSWORD_HINT,POSITIONS,addMonths,dateOnly,isWorking,monthDays,positionLabel,statusLabel,calculateMaxEndDate,getValidEndDates,blockedDays,type Employee,type Leave,type LeaveInput,type Preview,type Quota} from '../shared/domain';
 import {api,action,ApiError} from './api';
 const fmt=(d:string,full=false)=>d?new Intl.DateTimeFormat('id-ID',{day:'numeric',month:full?'long':'short',...(full?{year:'numeric'}:{})}).format(new Date(d+'T00:00:00')):'—';
@@ -306,7 +306,20 @@ function Modal({title,onClose,children,compact=false}:{title:string;onClose:()=>
   useEffect(()=>{const old=document.activeElement as HTMLElement;const before=document.body.style.overflow;document.body.style.overflow='hidden';ref.current?.querySelector<HTMLButtonElement>('button')?.focus();const handler=(e:KeyboardEvent)=>{if(e.key==='Escape')closeRef.current();if(e.key==='Tab'){const list=Array.from(ref.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href]')??[]);if(e.shiftKey&&document.activeElement===list[0]){e.preventDefault();list.at(-1)?.focus();}else if(!e.shiftKey&&document.activeElement===list.at(-1)){e.preventDefault();list[0]?.focus();}}};document.addEventListener('keydown',handler);return()=>{document.body.style.overflow=before;document.removeEventListener('keydown',handler);old?.focus();};},[]);
   return <div className="modal-backdrop"><div className={'modal'+(compact?' modal-compact':'')} ref={ref} role="dialog" aria-modal="true" aria-label={title}><div className="modal-header"><h2>{title}</h2><button className="icon-button" aria-label="Tutup dialog" onClick={onClose}><X size={21}/></button></div><div className="modal-body">{children}</div></div></div>;
 }
-function Detail({leave:r,user,today,onClose,onUpdate,onCopy}:{leave:Leave;user:Employee;today:string;onClose:()=>void;onUpdate:(r:Leave)=>void;onCopy:()=>void}){const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [reason,setReason]=useState('');const [channel,setChannel]=useState('Telepon');const [confirmAction,setConfirmAction]=useState('');const canReview=user.roles.includes('SDM')&&r.employeeId!==user.id&&r.status==='PENDING_SDM';
+function Detail({leave:r,user,today,onClose,onUpdate,onCopy}:{leave:Leave;user:Employee;today:string;onClose:()=>void;onUpdate:(r:Leave)=>void;onCopy:()=>void}){const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [reason,setReason]=useState('');const [channel,setChannel]=useState(r.confirmationChannel||'WhatsApp');const [isEditingConfirm,setIsEditingConfirm]=useState(false);const [customChannel,setCustomChannel]=useState(Boolean(r.confirmationChannel&&!['WhatsApp','Telepon','Tatap Muka','Email'].includes(r.confirmationChannel)));const [confirmAction,setConfirmAction]=useState('');const canReview=user.roles.includes('SDM')&&r.employeeId!==user.id&&r.status==='PENDING_SDM';
+  const cleanPhone=(r.phone||'').replace(/\D/g,'');const waNumber=cleanPhone.startsWith('0')?'62'+cleanPhone.slice(1):cleanPhone.startsWith('62')?cleanPhone:('62'+cleanPhone);
+  const waMessage=[
+    `Halo *${r.employeeName}*, kami dari SDM ingin mengonfirmasi terkait pengajuan cuti Anda:`,
+    '',
+    `• *Nama :* ${r.employeeName}`,
+    `• *Posisi :* ${positionLabel(r.position)}`,
+    `• *Jenis cuti :* ${r.subtype} (${r.number})`,
+    `• *Alasan pengajuan :* ${r.reason}`,
+    `• *Jadwal cuti :* ${fmt(r.effectiveStart,true)} s/d ${fmt(r.effectiveEnd,true)} (${r.duration} hari kerja)`,
+    '',
+    'Apakah Anda jadi mengambil cuti tersebut? Mohon konfirmasinya. Terima kasih.'
+  ].join('\n');
+  const waUrl=`https://wa.me/${waNumber}?text=${encodeURIComponent(waMessage)}`;
   async function update(actionName:string,body:any){setBusy(true);setError('');try{onUpdate(await action('/leave-requests/'+r.id+'/'+actionName,{...body,version:r.version}));setConfirmAction('');}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
   const cancelDecision=()=>{if(!busy){setConfirmAction('');setError('');}};
   if(confirmAction)return <Modal key="decision" compact title={confirmAction==='WITHDRAWN'?'Tarik pengajuan ini?':confirmAction==='APPROVED'?'Setujui pengajuan ini?':'Tolak pengajuan ini?'} onClose={cancelDecision}>
@@ -318,7 +331,70 @@ function Detail({leave:r,user,today,onClose,onUpdate,onCopy}:{leave:Leave;user:E
   return <Modal title={'Detail '+r.number} onClose={onClose}><div className="detail-title"><div className="person"><span className="avatar teal">{initials(r.employeeName)}</span><div><h3>{r.employeeName}</h3><p>{positionLabel(r.position)} · {r.category==='REGULAR'?'Reguler':'Darurat'}</p></div></div><Badge status={r.status}/></div><div className="detail-dates"><div><small>Tanggal efektif</small><strong>{fmt(r.effectiveStart,true)} – {fmt(r.effectiveEnd,true)}</strong></div><b>{r.duration}<small>hari kerja</small></b></div><dl><dt>Tanggal diminta</dt><dd>{fmt(r.start,true)} – {fmt(r.end,true)}</dd><dt>Jenis cuti</dt><dd>{r.subtype}</dd><dt>Email</dt><dd>{r.email}</dd><dt>Nomor HP</dt><dd>{r.phone}</dd><dt>Versi kalender</dt><dd>{r.calendarVersion} · Kuota {r.limit} orang</dd></dl><h4>Alasan pengajuan</h4><p className="reason-text">{r.reason}</p>{r.decisionReason&&<div className="alert info"><span><strong>Catatan keputusan</strong><br/>{r.decisionReason}</span></div>}
     <h4>Aktivitas pengajuan</h4><div className="timeline">{r.events.map((e,i)=><div key={i}><i/><strong>{e.text}</strong><small>{e.actor} · {new Date(e.at).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'})} WIB</small></div>)}</div>
     {r.status==='PENDING_SDM'&&r.effectiveStart<today&&<div className="alert danger">Tanggal mulai sudah terlewati. Persetujuan tidak lagi tersedia.</div>}
-    {canReview&&r.category==='REGULAR'&&<div className="confirmation-box"><h4>Konfirmasi karyawan</h4><p>{r.confirmation==='CONFIRMED'?'Karyawan telah mengonfirmasi jadi mengambil cuti.':r.confirmation==='DECLINED'?'Karyawan tidak jadi cuti. Tolak pengajuan untuk menyelesaikan proses.':'Hubungi karyawan lalu catat hasil konfirmasinya.'}</p><Field label="Kanal konfirmasi"><input value={channel} onChange={e=>setChannel(e.target.value)} maxLength={120}/></Field><div className="inline-actions"><button disabled={busy} className="button secondary" onClick={()=>update('confirmation',{result:'CONFIRMED',channel})}><Check size={16}/>Jadi mengambil cuti</button><button disabled={busy} className="text-button" onClick={()=>update('confirmation',{result:'DECLINED',channel})}>Tidak jadi</button></div></div>}
+    {canReview&&r.category==='REGULAR'&&<div className={'confirmation-box '+(r.confirmation==='CONFIRMED'?'confirmed':r.confirmation==='DECLINED'?'declined':'')}>
+      <div className="confirmation-box-header">
+        <div className="confirmation-title-wrap">
+          <div className="confirmation-box-icon"><UserCheck size={18}/></div>
+          <div>
+            <h4>Konfirmasi karyawan</h4>
+            <p className="confirmation-box-subtitle">{r.confirmation==='CONFIRMED'?'Karyawan telah mengonfirmasi jadi mengambil cuti.':r.confirmation==='DECLINED'?'Karyawan tidak jadi cuti. Tolak pengajuan untuk menyelesaikan proses.':'Hubungi karyawan lalu catat hasil konfirmasinya.'}</p>
+          </div>
+        </div>
+        {r.confirmation!=='NOT_CONFIRMED'&&!isEditingConfirm&&<button type="button" className="text-button" onClick={()=>setIsEditingConfirm(true)} style={{fontSize:11,padding:'4px 0'}}><RotateCcw size={12}/>Ubah konfirmasi</button>}
+      </div>
+      <div className="quick-contact-strip">
+        <div className="quick-contact-info">
+          <small>Kontak {r.employeeName}:</small>
+          <strong>{r.phone}</strong>
+        </div>
+        <div className="quick-contact-actions">
+          <a href={waUrl} target="_blank" rel="noopener noreferrer" className="quick-contact-btn wa" title="Buka chat WhatsApp dengan draf konfirmasi">
+            <MessageCircle size={14}/>Chat WhatsApp
+          </a>
+          <a href={`tel:${r.phone}`} className="quick-contact-btn tel" title="Panggil nomor telepon karyawan">
+            <Phone size={14}/>Panggil Telepon
+          </a>
+        </div>
+      </div>
+      {r.confirmation==='CONFIRMED'&&!isEditingConfirm?(
+        <div className="confirmation-banner confirmed">
+          <div className="confirmation-banner-content">
+            <CheckCircle2 size={18}/>
+            <div className="confirmation-banner-text">
+              <strong>Terkonfirmasi melalui {r.confirmationChannel||channel}</strong>
+              <small>Pengajuan sudah dapat disetujui melalui tombol "Setujui pengajuan" di bawah.</small>
+            </div>
+          </div>
+        </div>
+      ):r.confirmation==='DECLINED'&&!isEditingConfirm?(
+        <div className="confirmation-banner declined">
+          <div className="confirmation-banner-content">
+            <XCircle size={18}/>
+            <div className="confirmation-banner-text">
+              <strong>Karyawan membatalkan cuti (Kanal: {r.confirmationChannel||channel})</strong>
+              <small>Silakan tolak pengajuan ini untuk melepas slot kuota.</small>
+            </div>
+          </div>
+          <button type="button" className="button danger-button" style={{minHeight:32,padding:'4px 12px',fontSize:11}} onClick={()=>setConfirmAction('REJECTED')}>Tolak pengajuan sekarang</button>
+        </div>
+      ):(
+        <>
+          <div className="field" style={{marginBottom:12}}>
+            <span style={{fontSize:12,fontWeight:600,color:'#52717b'}}>Kanal konfirmasi:</span>
+            <div className="channel-chips">
+              {['WhatsApp','Telepon','Tatap Muka','Email'].map(ch=><button key={ch} type="button" className={'channel-chip '+(channel===ch&&!customChannel?'selected':'')} onClick={()=>{setChannel(ch);setCustomChannel(false);}}>{ch==='WhatsApp'&&<MessageCircle size={13}/>}{ch==='Telepon'&&<Phone size={13}/>}{ch}</button>)}
+              <button type="button" className={'channel-chip '+(customChannel?'selected':'')} onClick={()=>{setCustomChannel(true);if(['WhatsApp','Telepon','Tatap Muka','Email'].includes(channel))setChannel('');}}>Lainnya...</button>
+            </div>
+            {customChannel&&<input autoFocus value={channel} onChange={e=>setChannel(e.target.value)} placeholder="Tuliskan kanal konfirmasi (misal: Microsoft Teams, Memo dinas)..." maxLength={120} style={{marginTop:8}}/>}
+          </div>
+          <div className="confirmation-actions">
+            <button disabled={busy||!channel.trim()} className="button confirm-yes-btn" onClick={async()=>{await update('confirmation',{result:'CONFIRMED',channel:channel.trim()});setIsEditingConfirm(false);}}><Check size={16}/>Jadi mengambil cuti</button>
+            <button disabled={busy||!channel.trim()} className="button confirm-no-btn" onClick={async()=>{await update('confirmation',{result:'DECLINED',channel:channel.trim()});setIsEditingConfirm(false);}}><X size={16}/>Tidak jadi</button>
+            {isEditingConfirm&&<button type="button" className="text-button" onClick={()=>setIsEditingConfirm(false)} style={{marginLeft:'auto'}}>Batal ubah</button>}
+          </div>
+        </>
+      )}
+    </div>}
     {error&&<div className="alert danger" role="alert">{error}</div>}{r.employeeId===user.id&&['REJECTED','WITHDRAWN'].includes(r.status)&&<button className="button secondary" onClick={onCopy}><Plus size={17}/>Salin ke pengajuan baru</button>}
     <div className="modal-actions">{r.status==='PENDING_SDM'&&r.employeeId===user.id&&<button className="button secondary" onClick={()=>setConfirmAction('WITHDRAWN')}>Tarik pengajuan</button>}{canReview&&<><button className="button secondary" onClick={()=>setConfirmAction('REJECTED')}>Tolak pengajuan</button><button className="button primary" disabled={busy||r.effectiveStart<today||(r.category==='REGULAR'&&r.confirmation!=='CONFIRMED')} onClick={()=>setConfirmAction('APPROVED')}><Check size={17}/>Setujui pengajuan</button></>}</div>
   </Modal>;
