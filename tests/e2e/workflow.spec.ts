@@ -60,7 +60,7 @@ test('employee submits regular leave, SDM confirms and approves, email captured'
   await expect(hr.locator('.table-footer')).not.toContainText('Semua bulan');
   await hr.getByLabel('Filter bulan pengajuan').selectOption('');
   await expect(hr.locator('.table-footer')).toContainText('Semua bulan');
-  await expect(hr.getByRole('link',{name:'Unduh laporan'})).toHaveAttribute('href','/api/reports.csv?month=all');
+  await expect(hr.getByRole('link',{name:'Unduh laporan'})).toHaveAttribute('href','/api/reports.xlsx?month=all');
   await hr.getByLabel('Cari pengajuan').fill(number);await hr.getByRole('button',{name:'Lihat Alya Rahma '+number,exact:true}).click();
   await expect(hr.getByRole('button',{name:'Setujui pengajuan',exact:true})).toBeDisabled();await hr.getByRole('button',{name:'Jadi mengambil cuti'}).click();await expect(hr.getByText('Karyawan telah mengonfirmasi jadi mengambil cuti.')).toBeVisible();
   await hr.getByRole('button',{name:'Tolak pengajuan',exact:true}).click();

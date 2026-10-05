@@ -30,7 +30,7 @@ Akun tersebut hanya untuk demonstrasi. Seed hanya berjalan pada database kosong.
 - Konfirmasi reguler, persetujuan/penolakan SDM, alasan keputusan, penarikan pending, dan timeline.
 - Kuota tidak dikurangi dua kali untuk orang yang sama dan tidak dilepas saat tanggal cuti selesai.
 - Transaksi database serta idempotensi submit untuk mencegah perebutan kuota dan pengiriman ganda.
-- Ekspor CSV SDM tanpa alasan pribadi dan pencatatan audit.
+- Ekspor Excel (.xlsx) SDM dengan tabel-tabel terstruktur rapi (ringkasan & rincian data) tanpa alasan pribadi dan pencatatan audit.
 - Admin karyawan/peran, kuota periode mendatang, pengecualian kalender, antrean notifikasi, dan retry email gagal.
 - Worker email terjadwal: reguler satu bulan sebelum tanggal mulai efektif; darurat dan keputusan segera diantrekan.
 - Font disajikan dari aset lokal, tanpa permintaan font pihak ketiga.

@@ -313,7 +313,7 @@ Email menggunakan template ringkas: nomor pengajuan, status/identitas minimum ya
 - Batasi perubahan email snapshot ke domain yang diizinkan organisasi; tetap bisa diedit sesuai kebutuhan pengguna. Detail sensitif tidak dikirim dalam email.
 - Enkripsi transport, backup, dan media penyimpanan; kelola kredensial database/email di secret manager lingkungan deployment.
 - Jangan mencatat alasan, isi form, token autentikasi, atau kontak lengkap dalam log aplikasi. Audit menyimpan actor, aksi, objek, waktu, dan perubahan status yang diperlukan.
-- Ekspor mengecualikan alasan secara default, memfilter lingkup unit, mencegah formula injection pada CSV, serta tidak menggunakan tautan publik.
+- Ekspor mengecualikan alasan secara default, memfilter lingkup unit, mencegah formula injection pada dokumen ekspor Excel/CSV, serta tidak menggunakan tautan publik.
 - Retensi alasan cuti, audit, backup, lokasi data, akses operator, dan penghapusan pegawai membutuhkan keputusan organisasi sebelum produksi.
 
 Rancangan ini tidak menyatakan kepatuhan terhadap standar/regulasi tertentu; penilaian kebijakan keamanan organisasi dilakukan sebelum deployment.
