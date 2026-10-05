@@ -43,7 +43,7 @@ test('employee submits regular leave, SDM confirms and approves, email captured'
   const pendingCard=hr.locator('.stat-card').filter({hasText:'Menunggu review'}).locator('.stat-value');
   const pendingBefore=Number.parseInt(await pendingCard.innerText(),10);
   await page.locator('nav').getByRole('button',{name:'Ajukan cuti',exact:true}).click();
-  await page.getByLabel('Jenis cuti',{exact:true}).fill('Keperluan keluarga');await page.getByLabel('Alasan pengajuan').fill('Menghadiri acara keluarga untuk pengujian aplikasi.');
+  await page.getByLabel('Jenis cuti',{exact:true}).selectOption('Keperluan keluarga');await page.getByLabel('Alasan pengajuan').fill('Menghadiri acara keluarga untuk pengujian aplikasi.');
   await page.getByLabel('Tanggal mulai',{exact:true}).fill(start);await page.getByLabel('Tanggal akhir',{exact:true}).fill(start);
   await expect(page.getByRole('button',{name:'Tinjau pengajuan'})).toBeEnabled();await page.getByRole('button',{name:'Tinjau pengajuan'}).click();await page.getByRole('button',{name:'Kirim pengajuan'}).click();
   const dialog=page.getByRole('dialog');await expect(dialog.getByText('Menunggu review',{exact:true})).toBeVisible();const title=await dialog.locator('.modal-header h2').innerText();const number=title.replace('Detail ','');
