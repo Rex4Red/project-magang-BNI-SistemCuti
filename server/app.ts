@@ -16,13 +16,33 @@ export function createApp(db:Database,options:{demo:boolean;now?:()=>Date;origin
   app.disable('x-powered-by');if(process.env.TRUST_LOCAL_PROXY==='true')app.set('trust proxy','loopback');app.use(helmet({contentSecurityPolicy:production?undefined:false}));app.use(express.json({limit:'40kb'}));app.use(cookieParser());
   app.get('/api/health',(_req,res)=>res.json({ok:true}));
   app.get('/api/config',(_req,res)=>res.json({demo:options.demo,today:dateOnly(now()),mailMode:process.env.MAIL_MODE??'capture'}));
-  app.use('/api',(req,_res,next)=>{if(!['GET','HEAD','OPTIONS'].includes(req.method)){const origin=req.get('origin');if(origin&&origin!==(options.origin??'http://127.0.0.1:5173'))return next(new AppError(403,'Asal permintaan tidak diizinkan.'));if(req.get('x-cuti-client')!=='web')return next(new AppError(403,'Permintaan tidak valid.'));}next();});
-  app.post('/api/login',rateLimit({windowMs:15*60*1000,limit:30,standardHeaders:true,legacyHeaders:false}),async(req,res)=>{
-    const {email,password}=z.object({email:z.email().max(200),password:z.string().max(200)}).parse(req.body);
-    const row=(await db.query('SELECT data,password_hash FROM employees WHERE email=$1',[email.toLowerCase()])).rows[0];
-    ensure(row?.data.active&&await compare(password,row.password_hash),'Email atau kata sandi tidak sesuai.',401);
-    const token=randomBytes(32).toString('hex');await db.query('INSERT INTO sessions(token,employee_id,expires_at) VALUES($1,$2,$3)',[digest(token),row.data.id,new Date(now().getTime()+8*3600000).toISOString()]);
-    res.cookie('cuti_session',token,{httpOnly:true,sameSite:'strict',secure:production||options.origin?.startsWith('https://')===true,maxAge:8*3600000,path:'/'}).json(row.data);
+  const isAllowedOrigin = (orig?: string) => {
+    if (!orig) return true;
+    const expected = options.origin ?? 'http://127.0.0.1:5173';
+    if (orig === expected) return true;
+    if (!production) {
+      try {
+        const u = new URL(orig);
+        if (u.hostname.endsWith('.trycloudflare.com') || u.hostname.endsWith('.loca.lt') || u.hostname === 'localhost' || u.hostname === '127.0.0.1') return true;
+      } catch {}
+    }
+    return false;
+  };
+  app.use('/api', (req, _res, next) => {
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+      const origin = req.get('origin');
+      if (origin && !isAllowedOrigin(origin)) return next(new AppError(403, 'Asal permintaan tidak diizinkan.'));
+      if (req.get('x-cuti-client') !== 'web') return next(new AppError(403, 'Permintaan tidak valid.'));
+    }
+    next();
+  });
+  app.post('/api/login', rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false }), async (req, res) => {
+    const { email, password } = z.object({ email: z.email().max(200), password: z.string().max(200) }).parse(req.body);
+    const row = (await db.query('SELECT data,password_hash FROM employees WHERE email=$1', [email.toLowerCase()])).rows[0];
+    ensure(row?.data.active && await compare(password, row.password_hash), 'Email atau kata sandi tidak sesuai.', 401);
+    const token = randomBytes(32).toString('hex'); await db.query('INSERT INTO sessions(token,employee_id,expires_at) VALUES($1,$2,$3)', [digest(token), row.data.id, new Date(now().getTime() + 8 * 3600000).toISOString()]);
+    const isHttps = production || options.origin?.startsWith('https://') === true || req.get('x-forwarded-proto') === 'https' || req.get('origin')?.startsWith('https://') === true;
+    res.cookie('cuti_session', token, { httpOnly: true, sameSite: 'lax', secure: isHttps, maxAge: 8 * 3600000, path: '/' }).json(row.data);
   });
   app.use('/api',async(req,_res,next)=>{try{const token=req.cookies.cuti_session;ensure(typeof token==='string','Silakan masuk kembali.',401);const row=(await db.query('SELECT e.data FROM sessions s JOIN employees e ON e.id=s.employee_id WHERE s.token=$1 AND s.expires_at>$2',[digest(token),now().toISOString()])).rows[0];ensure(row?.data.active,'Sesi berakhir. Silakan masuk kembali.',401);req.actor=row.data;next();}catch(e){next(e);}});
   app.get('/api/me',(req,res)=>res.json(req.actor));
