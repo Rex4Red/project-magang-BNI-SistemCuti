@@ -66,3 +66,48 @@ it('dashboard redacts colleague details and separates person/day counts',async()
 it('drafts reserve no quota and can be submitted',async()=>{const agent=await login();const d=await agent.post('/api/drafts').set('X-Cuti-Client','web').set('Idempotency-Key',randomUUID()).send(input).expect(200);expect((await preview(db,userB,input,clock)).quota.used).toBe(0);const p=await preview(db,user,input,clock);await agent.post('/api/leave-requests').set('X-Cuti-Client','web').set('Idempotency-Key',randomUUID()).send({...input,draftId:d.body.id,draftVersion:d.body.version,fingerprint:p.fingerprint}).expect(201);expect((await requests(db))).toHaveLength(1);});
 it('calendar change checks cutoff impact outside requested interval',async()=>{await create(user,{start:'2026-10-27',end:'2026-10-27'});const agent=await login('admin');await agent.post('/api/admin/calendar').set('X-Cuti-Client','web').set('Idempotency-Key',randomUUID()).send({date:'2026-10-30',working:false,label:'Libur khusus'}).expect(409);});
 it('export excludes private reasons and is limited to SDM',async()=>{await create();const employeeAgent=await login();await employeeAgent.get('/api/reports.xlsx?month=2026-10').expect(403);await employeeAgent.get('/api/reports.xls?month=2026-10').expect(403);await employeeAgent.get('/api/reports.csv?month=2026-10').expect(403);const agent=await login('sdm');const responseXlsx=await agent.get('/api/reports.xlsx?month=2026-10').responseType('blob').expect(200);expect(responseXlsx.headers['content-type']).toContain('spreadsheetml');const wb=new ExcelJS.Workbook();await wb.xlsx.load(responseXlsx.body);const ws=wb.getWorksheet('Monitoring Cuti Pegawai');expect(ws).toBeDefined();let foundName=false;let foundReason=false;ws?.eachRow(row=>{row.eachCell(cell=>{const v=String(cell.value??'');if(v.includes('Alya Rahma'))foundName=true;if(v.includes(input.reason))foundReason=true;});});expect(foundName).toBe(true);expect(foundReason).toBe(false);const responseXls=await agent.get('/api/reports.xls?month=2026-10').expect(200);expect(responseXls.text).toContain('Alya Rahma');expect(responseXls.text).not.toContain(input.reason);const responseCsv=await agent.get('/api/reports.csv?month=2026-10').expect(200);expect(responseCsv.text).toContain('Alya Rahma');expect(responseCsv.text).not.toContain(input.reason);});
+it('supports employee leave cancellation request and SDM review to release quota',async()=>{
+  const r=await create();
+  const c=await act(db,sdm,r.id,'confirmation',{version:r.version,result:'CONFIRMED',channel:'Telepon'},randomUUID(),clock);
+  const approved=await act(db,sdm,r.id,'decision',{version:c.version,outcome:'APPROVED'},randomUUID(),clock);
+  expect(approved.status).toBe('APPROVED');
+  expect((await preview(db,userB,input,clock)).quota.available).toBe(1);
+
+  // 1. Non-employee or invalid reason is rejected
+  await expect(act(db,sdm,approved.id,'cancel-request',{version:approved.version,reason:'Tugas mendadak kantor'},randomUUID(),clock)).rejects.toMatchObject({status:403});
+  await expect(act(db,user,approved.id,'cancel-request',{version:approved.version,reason:'Pend'},randomUUID(),clock)).rejects.toThrow('minimal 5 karakter');
+
+  // 2. Employee submits cancellation request
+  const cancelReq=await act(db,user,approved.id,'cancel-request',{version:approved.version,reason:'Mendapat tugas audit mendadak dari kantor wilayah.'},randomUUID(),clock);
+  expect(cancelReq.cancellation?.status).toBe('PENDING');
+  expect(cancelReq.status).toBe('APPROVED');
+
+  // 3. Employee aborts/pulls back cancellation request
+  const aborted=await act(db,user,approved.id,'cancel-abort',{version:cancelReq.version},randomUUID(),clock);
+  expect(aborted.cancellation).toBeUndefined();
+
+  // 4. Employee re-submits cancellation request
+  const cancelReq2=await act(db,user,approved.id,'cancel-request',{version:aborted.version,reason:'Tugas pengawasan mendesak tidak dapat ditinggalkan.'},randomUUID(),clock);
+  expect(cancelReq2.cancellation?.status).toBe('PENDING');
+
+  // 5. SDM rejects cancellation request
+  await expect(act(db,sdm,approved.id,'cancel-review',{version:cancelReq2.version,outcome:'REJECTED',reason:'Pend'},randomUUID(),clock)).rejects.toThrow('minimal 5 karakter');
+  const cancelRejected=await act(db,sdm,approved.id,'cancel-review',{version:cancelReq2.version,outcome:'REJECTED',reason:'Jadwal operasional cabang memerlukan kehadiran sesuai rencana.'},randomUUID(),clock);
+  expect(cancelRejected.status).toBe('APPROVED');
+  expect(cancelRejected.cancellation?.status).toBe('REJECTED');
+  expect(cancelRejected.cancellation?.reviewedBy).toBe(sdm.name);
+
+  // 6. Employee submits cancellation request again after rejection
+  const cancelReq3=await act(db,user,approved.id,'cancel-request',{version:cancelRejected.version,reason:'Arahan langsung pimpinan cabang untuk penggantian jadwal.'},randomUUID(),clock);
+  expect(cancelReq3.cancellation?.status).toBe('PENDING');
+
+  // 7. SDM approves cancellation request -> Status becomes WITHDRAWN and quota is released
+  const cancelApproved=await act(db,sdm,approved.id,'cancel-review',{version:cancelReq3.version,outcome:'APPROVED',reason:'Disetujui untuk penjadwalan ulang kemudian.'},randomUUID(),clock);
+  expect(cancelApproved.status).toBe('WITHDRAWN');
+  expect(cancelApproved.cancellation?.status).toBe('APPROVED');
+
+  // 8. Quota slot is freed up for userB
+  const p=await preview(db,userB,input,clock);
+  expect(p.quota.available).toBe(2);
+  expect(p.quota.used).toBe(0);
+});

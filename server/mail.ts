@@ -12,7 +12,8 @@ export async function processMail(db:Database,now=new Date()) {
     if((job.kind==='REMINDER'&&(leave.status!=='PENDING_SDM'||leave.confirmation!=='NOT_CONFIRMED'))||(job.kind==='EMERGENCY'&&leave.status!=='PENDING_SDM')) {await db.query("UPDATE mail_jobs SET state='SKIPPED',lease_until=NULL WHERE id=$1",[job.id]);return true;}
     const recipients=job.kind==='DECISION'?[leave.email]:(await employees(db)).filter(e=>e.unit===job.unit_id&&e.active&&e.roles.includes('SDM')).map(e=>e.email);
     if(!recipients.length)throw new Error('NO_SDM_RECIPIENT');
-    const subject=`[Ruang Cuti] ${leave.number} • ${job.kind==='DECISION'?(leave.status==='APPROVED'?'Disetujui':'Ditolak'):'Perlu review SDM'}`;
+    const decisionText = leave.cancellation?.status === 'APPROVED' ? 'Pembatalan Disetujui' : leave.cancellation?.status === 'REJECTED' ? 'Pembatalan Ditolak' : leave.status === 'APPROVED' ? 'Disetujui' : leave.status === 'WITHDRAWN' ? 'Ditarik' : 'Ditolak';
+    const subject=`[Ruang Cuti] ${leave.number} • ${job.kind==='DECISION'?decisionText:'Perlu review SDM'}`;
     const body=`Pengajuan ${leave.number}\nKaryawan: ${leave.employeeName}\nTanggal efektif: ${leave.effectiveStart} s.d. ${leave.effectiveEnd}\nSilakan masuk ke aplikasi untuk melihat status terkini dan detail:\n${process.env.APP_ORIGIN??'http://127.0.0.1:5173'}/?request=${leave.id}`;
     for(const recipient of recipients){await db.query("INSERT INTO mail_deliveries(id,job_id,recipient,state,subject,body) VALUES($1,$2,$3,'QUEUED',$4,$5) ON CONFLICT(job_id,recipient) DO NOTHING",[randomUUID(),job.id,recipient,subject,body]);const d=(await db.query('SELECT * FROM mail_deliveries WHERE job_id=$1 AND recipient=$2',[job.id,recipient])).rows[0];if(['SENT','CAPTURED'].includes(d.state))continue;
       if(process.env.MAIL_MODE==='smtp'){

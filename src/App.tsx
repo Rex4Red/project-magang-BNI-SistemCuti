@@ -5,7 +5,11 @@ import {api,action,ApiError} from './api';
 const fmt=(d:string,full=false)=>d?new Intl.DateTimeFormat('id-ID',{day:'numeric',month:full?'long':'short',...(full?{year:'numeric'}:{})}).format(new Date(d+'T00:00:00')):'—';
 const monthLabel=(m:string)=>new Intl.DateTimeFormat('id-ID',{month:'long',year:'numeric'}).format(new Date(m+'-01T00:00:00'));
 const initials=(name:string)=>name.split(' ').slice(0,2).map(n=>n[0]).join('');
-const Badge=({status}:{status:Leave['status']})=><span className={'badge '+status.toLowerCase()}><span/>{statusLabel[status]}</span>;
+const Badge=({status,cancellation}:{status:Leave['status'];cancellation?:Leave['cancellation']})=>{
+  if(status==='APPROVED'&&cancellation?.status==='PENDING')return <span className="badge pending_sdm"><span/>Menunggu batal SDM</span>;
+  if(status==='WITHDRAWN'&&cancellation?.status==='APPROVED')return <span className="badge withdrawn"><span/>Dibatalkan</span>;
+  return <span className={'badge '+status.toLowerCase()}><span/>{statusLabel[status]}</span>;
+};
 const Empty=({title='Belum ada pengajuan',text=''}:{title?:string;text?:string})=><div className="empty"><FileText size={30}/><h3>{title}</h3>{text&&<p>{text}</p>}</div>;
 const Field=({label,children,hint}:{label:string;children:ReactNode;hint?:string})=><label className="field"><span>{label}</span>{children}{hint&&<small>{hint}</small>}</label>;
 type Page='dashboard'|'requests'|'calendar'|'form'|'profile'|'admin'|'notifications';
@@ -95,7 +99,7 @@ export default function App(){
   }}/>;
   const pageTitles:Record<Page,string>={dashboard:'Ringkasan',requests:sdm?'Pengajuan cuti':'Pengajuan saya',calendar:'Kalender cuti',form:'Ajukan cuti',profile:'Profil saya',admin:'Administrasi',notifications:'Pusat notifikasi'};
   const navItems:[Page,typeof Home,string][]=[['dashboard',LayoutGrid,'Ringkasan'],['requests',FileText,sdm?'Pengajuan cuti':'Pengajuan saya'],['calendar',CalendarDays,'Kalender cuti']];
-  const pending=data?.requests.filter((r:Leave)=>r.status==='PENDING_SDM').length??0;
+  const pending=data?.requests.filter((r:Leave)=>r.status==='PENDING_SDM'||(sdm&&r.status==='APPROVED'&&r.cancellation?.status==='PENDING')).length??0;
   return <div className="app-shell">
     {menu&&<div className="menu-scrim" onClick={()=>setMenu(false)}/>}
     <aside className={'sidebar '+(menu?'open':'')}><div className="brand"><span className="bni-logo"><img src="/images/bni-logo.png" alt="BNI" /></span></div>
@@ -112,7 +116,7 @@ export default function App(){
         {page==='calendar'&&<CalendarView data={data} month={month} setMonth={setMonth} onSelect={(id:string)=>api<Leave>('/leave-requests/'+id).then(setSelected).catch(e=>setError(e.message))}/>}
         {page==='form'&&<LeaveForm key={draft?.id??'new'} user={user} today={data.today} draft={draft} calendar={data.calendarConfig} onDelete={()=>{reload();nav('requests');setToast('Draft dihapus.');}} onDone={r=>{if(r.effectiveStart)setMonth(r.effectiveStart.slice(0,7));reload();setSelected(r.status==='DRAFT'?null:r);nav('requests');setToast(r.status==='DRAFT'?'Draft tersimpan.':'Pengajuan berhasil dikirim ke SDM.');}}/>}
         {page==='profile'&&<section className="panel profile-panel"><span className="avatar large teal">{initials(user.name)}</span><h2>{user.name}</h2><p>{positionLabel(user.position)} • {data.unitName}</p><dl><dt>Email</dt><dd>{user.email}</dd><dt>Nomor HP</dt><dd>{user.phone}</dd><dt>Hak akses</dt><dd>{user.roles.join(', ')}</dd></dl><div className="alert info"><Info size={18}/>Perubahan kontak pada pengajuan tidak mengubah profil ini. Hubungi administrator untuk memperbarui profil.</div><button className="button secondary" onClick={async()=>{await action('/logout',{});setUser(null);setData(null);setPage('dashboard');try{sessionStorage.removeItem('bni_cuti_page');history.replaceState(null,'',window.location.pathname+window.location.search);}catch{}}}><LogOut size={17}/>Keluar dari akun</button></section>}
-        {page==='notifications'&&<section className="panel"><div className="panel-heading"><h2>Aktivitas pengajuan</h2><span className="muted">Status terbaru</span></div>{data.requests.length?data.requests.filter((r:Leave)=>r.status!=='DRAFT').slice(0,15).map((r:Leave)=><button className="activity-row" key={r.id} onClick={()=>setSelected(r)}><span className="activity-icon"><Bell size={18}/></span><span><strong>{r.employeeName} • {r.number}</strong><small>{r.events.at(-1)?.text} · {fmt(r.effectiveStart)}</small></span><Badge status={r.status}/></button>):<Empty title="Belum ada aktivitas"/>}</section>}
+        {page==='notifications'&&<section className="panel"><div className="panel-heading"><h2>Aktivitas pengajuan</h2><span className="muted">Status terbaru</span></div>{data.requests.length?data.requests.filter((r:Leave)=>r.status!=='DRAFT').slice(0,15).map((r:Leave)=><button className="activity-row" key={r.id} onClick={()=>setSelected(r)}><span className="activity-icon"><Bell size={18}/></span><span><strong>{r.employeeName} • {r.number}</strong><small>{r.events.at(-1)?.text} · {fmt(r.effectiveStart)}</small></span><Badge status={r.status} cancellation={r.cancellation}/></button>):<Empty title="Belum ada aktivitas"/>}</section>}
         {page==='admin'&&admin&&<Admin onChange={reload} onToast={setToast} today={data.today} userId={user.id}/>}
       </>}
 
@@ -141,8 +145,18 @@ function Dashboard({data,month,sdm,onSelect,onRequests,onCalendar}:any){
 
   </>;
 }
-function RequestTable({requests,onSelect,compact=false,onDraft}:{requests:Leave[];onSelect:(r:Leave)=>void;compact?:boolean;onDraft?:(r:Leave)=>void}){return requests.length?<div className="table-scroll"><table><thead><tr><th>Karyawan</th><th>Jadwal cuti</th>{!compact&&<th>Jenis</th>}<th>Status</th><th aria-label="Aksi"/></tr></thead><tbody>{requests.map((r,i)=><tr key={r.id}><td><div className="person"><span className="avatar neutral">{initials(r.employeeName)}</span><div><strong>{r.employeeName}</strong><small>{positionLabel(r.position)}</small></div></div></td><td><span className="date-range">{fmt(r.effectiveStart||r.start)}{r.effectiveEnd!==r.effectiveStart?' – '+fmt(r.effectiveEnd||r.end):''}</span><small>{r.duration} hari kerja</small></td>{!compact&&<td><span className={'category '+r.category.toLowerCase()}>{r.category==='REGULAR'?'Reguler':'Darurat'}</span><small>{r.number}</small></td>}<td><Badge status={r.status}/></td><td><button className="icon-button table-arrow" aria-label={'Lihat '+r.employeeName+' '+r.number} onClick={()=>r.status==='DRAFT'&&onDraft?onDraft(r):onSelect(r)}><ArrowUpRight size={17}/></button></td></tr>)}</tbody></table></div>:<Empty/>;}
-function RequestList({requests,month,sdm,onSelect,onDraft}:any){const [query,setQuery]=useState('');const [status,setStatus]=useState('ALL');const filtered=requests.filter((r:Leave)=>(!month||(r.effectiveStart||r.start).startsWith(month))&&(status==='ALL'||r.status===status)&&`${r.employeeName} ${r.number} ${positionLabel(r.position)}`.toLowerCase().includes(query.toLowerCase()));return <section className="panel"><div className="list-toolbar"><div className="tabs">{[['ALL','Semua'],['PENDING_SDM','Menunggu'],['APPROVED','Disetujui'],['REJECTED','Ditolak'],...(!sdm?[['DRAFT','Draft'],['WITHDRAWN','Ditarik']]:[])].map(([id,label])=><button key={id} className={status===id?'selected':''} onClick={()=>setStatus(id)}>{label}</button>)}</div><label className="search"><Search size={17}/><input aria-label="Cari pengajuan" placeholder="Cari nama atau nomor…" value={query} onChange={e=>setQuery(e.target.value)}/></label></div><RequestTable requests={filtered} onSelect={onSelect} onDraft={onDraft}/><div className="table-footer">Menampilkan {filtered.length} pengajuan · {month?monthLabel(month):'Semua bulan'}</div></section>;}
+function RequestTable({requests,onSelect,compact=false,onDraft}:{requests:Leave[];onSelect:(r:Leave)=>void;compact?:boolean;onDraft?:(r:Leave)=>void}){return requests.length?<div className="table-scroll"><table><thead><tr><th>Karyawan</th><th>Jadwal cuti</th>{!compact&&<th>Jenis</th>}<th>Status</th><th aria-label="Aksi"/></tr></thead><tbody>{requests.map((r,i)=><tr key={r.id}><td><div className="person"><span className="avatar neutral">{initials(r.employeeName)}</span><div><strong>{r.employeeName}</strong><small>{positionLabel(r.position)}</small></div></div></td><td><span className="date-range">{fmt(r.effectiveStart||r.start)}{r.effectiveEnd!==r.effectiveStart?' – '+fmt(r.effectiveEnd||r.end):''}</span><small>{r.duration} hari kerja</small></td>{!compact&&<td><span className={'category '+r.category.toLowerCase()}>{r.category==='REGULAR'?'Reguler':'Darurat'}</span><small>{r.number}</small></td>}<td><Badge status={r.status} cancellation={r.cancellation}/></td><td><button className="icon-button table-arrow" aria-label={'Lihat '+r.employeeName+' '+r.number} onClick={()=>r.status==='DRAFT'&&onDraft?onDraft(r):onSelect(r)}><ArrowUpRight size={17}/></button></td></tr>)}</tbody></table></div>:<Empty/>;}
+function RequestList({requests,month,sdm,onSelect,onDraft}:any){
+  const [query,setQuery]=useState('');
+  const [status,setStatus]=useState('ALL');
+  const filtered=requests.filter((r:Leave)=>{
+    const matchMonth=!month||(r.effectiveStart||r.start).startsWith(month);
+    const matchStatus=status==='ALL'||(status==='CANCEL_PENDING'?(r.status==='APPROVED'&&r.cancellation?.status==='PENDING'):r.status===status);
+    const matchQuery=`${r.employeeName} ${r.number} ${positionLabel(r.position)}`.toLowerCase().includes(query.toLowerCase());
+    return matchMonth&&matchStatus&&matchQuery;
+  });
+  return <section className="panel"><div className="list-toolbar"><div className="tabs">{[['ALL','Semua'],['PENDING_SDM','Menunggu'],...(sdm?[['CANCEL_PENDING','Perlu Batal']]:[]),['APPROVED','Disetujui'],['REJECTED','Ditolak'],...(!sdm?[['DRAFT','Draft'],['WITHDRAWN','Ditarik / Batal']]:[['WITHDRAWN','Dibatalkan']])].map(([id,label])=><button key={id} className={status===id?'selected':''} onClick={()=>setStatus(id)}>{label}</button>)}</div><label className="search"><Search size={17}/><input aria-label="Cari pengajuan" placeholder="Cari nama atau nomor…" value={query} onChange={e=>setQuery(e.target.value)}/></label></div><RequestTable requests={filtered} onSelect={onSelect} onDraft={onDraft}/><div className="table-footer">Menampilkan {filtered.length} pengajuan · {month?monthLabel(month):'Semua bulan'}</div></section>;
+}
 function CalendarView({data,month,setMonth,onSelect}:any){const [position,setPosition]=useState('ALL');const days=monthDays(month);const offset=(new Date(month+'-01T00:00:00').getDay()+6)%7;const entries=data.calendar.filter((r:any)=>position==='ALL'||r.position===position);return <><section className="panel calendar-panel"><div className="panel-heading"><div className="calendar-heading"><button className="icon-button" aria-label="Bulan sebelumnya" onClick={()=>setMonth(addMonths(month+'-01',-1).slice(0,7))}><ChevronLeft size={18}/></button><h2>{monthLabel(month)}</h2><button className="icon-button" aria-label="Bulan berikutnya" onClick={()=>setMonth(addMonths(month+'-01',1).slice(0,7))}><ChevronRight size={18}/></button></div><select aria-label="Filter posisi kalender" value={position} onChange={e=>setPosition(e.target.value)}><option value="ALL">Semua posisi</option>{data.quotas.map((q:Quota)=><option key={q.position} value={q.position}>{q.label}</option>)}</select></div><div className="calendar-scroll"><div className="calendar-grid">{['Sen','Sel','Rab','Kam','Jum','Sab','Min'].map(d=><div className="weekday" key={d}>{d}</div>)}{Array.from({length:offset},(_,i)=><div className="day outside" key={'o'+i}/>)}{days.map(d=>{const blocked=data.blocked.includes(d);const off=!isWorking(d,data.calendarConfig);return <div key={d} className={'day '+(blocked?'blocked ':'')+(off?'off ':'')+(d===data.today?'current':'')}><div className="day-number">{Number(d.slice(-2))}{blocked&&<small>H-3</small>}</div>{data.calendarConfig.exceptions[d]&&<small className="holiday-label">{data.calendarConfig.exceptions[d].label}</small>}{entries.filter((r:any)=>r.days.includes(d)).map((r:any,i:number)=><button disabled={!r.id} key={r.id+'-'+i} onClick={()=>onSelect(r.id)} className={'calendar-event '+(r.status==='APPROVED'?'approved':'pending')}><span>{r.name}</span><small>{positionLabel(r.position)} · {r.status==='APPROVED'?'Disetujui':'Menunggu'}</small></button>)}</div>;})}</div></div><div className="legend calendar-legend"><span><i className="teal-dot"/>Disetujui</span><span><i className="orange-dot"/>Menunggu review</span><span><i className="blocked-dot"/>3 hari kerja terakhir</span><span>Kalender kerja unit: Senin–Jumat + pengecualian admin</span></div></section><section className="panel all-quotas"><div className="panel-heading"><h2>Kapasitas posisi bulan ini</h2><span className="muted">Terpakai / kuota orang</span></div><div className="quota-cards">{data.quotas.map((q:Quota)=><div key={q.position}><strong>{q.label}</strong><span>{q.used}<small> / {q.limit}</small></span><p>{q.available} orang tersedia</p></div>)}</div></section></>;}
 
 function DatePicker({label,value,onChange,min,max,calendar,validDates,disabled=false,disableNonWorking=false,blockedDates=[],placeholder='Pilih tanggal'}:{label:string;value:string;onChange:(val:string)=>void;min?:string;max?:string;calendar?:any;validDates?:string[];disabled?:boolean;disableNonWorking?:boolean;blockedDates?:string[];placeholder?:string}){
@@ -306,7 +320,11 @@ function Modal({title,onClose,children,compact=false}:{title:string;onClose:()=>
   useEffect(()=>{const old=document.activeElement as HTMLElement;const before=document.body.style.overflow;document.body.style.overflow='hidden';ref.current?.querySelector<HTMLButtonElement>('button')?.focus();const handler=(e:KeyboardEvent)=>{if(e.key==='Escape')closeRef.current();if(e.key==='Tab'){const list=Array.from(ref.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href]')??[]);if(e.shiftKey&&document.activeElement===list[0]){e.preventDefault();list.at(-1)?.focus();}else if(!e.shiftKey&&document.activeElement===list.at(-1)){e.preventDefault();list[0]?.focus();}}};document.addEventListener('keydown',handler);return()=>{document.body.style.overflow=before;document.removeEventListener('keydown',handler);old?.focus();};},[]);
   return <div className="modal-backdrop"><div className={'modal'+(compact?' modal-compact':'')} ref={ref} role="dialog" aria-modal="true" aria-label={title}><div className="modal-header"><h2>{title}</h2><button className="icon-button" aria-label="Tutup dialog" onClick={onClose}><X size={21}/></button></div><div className="modal-body">{children}</div></div></div>;
 }
-function Detail({leave:r,user,today,onClose,onUpdate,onCopy}:{leave:Leave;user:Employee;today:string;onClose:()=>void;onUpdate:(r:Leave)=>void;onCopy:()=>void}){const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [reason,setReason]=useState('');const [channel,setChannel]=useState(r.confirmationChannel||'WhatsApp');const [isEditingConfirm,setIsEditingConfirm]=useState(false);const [customChannel,setCustomChannel]=useState(Boolean(r.confirmationChannel&&!['WhatsApp','Telepon','Tatap Muka','Email'].includes(r.confirmationChannel)));const [confirmAction,setConfirmAction]=useState('');const canReview=user.roles.includes('SDM')&&r.employeeId!==user.id&&r.status==='PENDING_SDM';
+function Detail({leave:r,user,today,onClose,onUpdate,onCopy}:{leave:Leave;user:Employee;today:string;onClose:()=>void;onUpdate:(r:Leave)=>void;onCopy:()=>void}){const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [reason,setReason]=useState('');const [channel,setChannel]=useState(r.confirmationChannel||'WhatsApp');const [isEditingConfirm,setIsEditingConfirm]=useState(false);const [customChannel,setCustomChannel]=useState(Boolean(r.confirmationChannel&&!['WhatsApp','Telepon','Tatap Muka','Email'].includes(r.confirmationChannel)));const [confirmAction,setConfirmAction]=useState('');
+  const canReview=user.roles.includes('SDM')&&r.employeeId!==user.id&&r.status==='PENDING_SDM';
+  const canReviewCancellation=user.roles.includes('SDM')&&r.employeeId!==user.id&&r.status==='APPROVED'&&r.cancellation?.status==='PENDING';
+  const canRequestCancellation=r.employeeId===user.id&&r.status==='APPROVED'&&r.effectiveEnd>=today&&(!r.cancellation||r.cancellation.status==='REJECTED');
+  const hasPendingCancellation=r.status==='APPROVED'&&r.cancellation?.status==='PENDING';
   const cleanPhone=(r.phone||'').replace(/\D/g,'');const waNumber=cleanPhone.startsWith('0')?'62'+cleanPhone.slice(1):cleanPhone.startsWith('62')?cleanPhone:('62'+cleanPhone);
   const waMessage=[
     `Halo *${r.employeeName}*, kami dari SDM ingin mengonfirmasi terkait pengajuan cuti Anda:`,
@@ -322,15 +340,96 @@ function Detail({leave:r,user,today,onClose,onUpdate,onCopy}:{leave:Leave;user:E
   const waUrl=`https://wa.me/${waNumber}?text=${encodeURIComponent(waMessage)}`;
   async function update(actionName:string,body:any){setBusy(true);setError('');try{onUpdate(await action('/leave-requests/'+r.id+'/'+actionName,{...body,version:r.version}));setConfirmAction('');}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
   const cancelDecision=()=>{if(!busy){setConfirmAction('');setError('');}};
-  if(confirmAction)return <Modal key="decision" compact title={confirmAction==='WITHDRAWN'?'Tarik pengajuan ini?':confirmAction==='APPROVED'?'Setujui pengajuan ini?':'Tolak pengajuan ini?'} onClose={cancelDecision}>
-    <div className="decision-summary"><strong>{r.employeeName}</strong><span>{r.number} · {positionLabel(r.position)}</span><span>{fmt(r.effectiveStart,true)} – {fmt(r.effectiveEnd,true)} · {r.duration} hari kerja</span></div>
-    {confirmAction==='REJECTED'?<Field label="Alasan penolakan"><textarea value={reason} onChange={e=>setReason(e.target.value)} minLength={5} maxLength={2000} placeholder="Jelaskan alasan penolakan…"/></Field>:<p className="reason-text">{confirmAction==='WITHDRAWN'?'Slot orang dilepas jika Anda tidak memiliki pengajuan aktif lain pada bulan ini.':'Keputusan akan dicatat dan pemberitahuan diantrekan ke email karyawan.'}</p>}
-    {error&&<div className="alert danger" role="alert">{error}</div>}
-    <div className="modal-actions"><button className="button secondary" disabled={busy} onClick={cancelDecision}>Kembali</button><button className={'button '+(confirmAction==='APPROVED'?'primary':'danger-button')} disabled={busy||(confirmAction==='REJECTED'&&reason.trim().length<5)} onClick={()=>update(confirmAction==='WITHDRAWN'?'withdraw':'decision',{outcome:confirmAction,reason})}>{busy?'Menyimpan…':'Konfirmasi keputusan'}</button></div>
-  </Modal>;
-  return <Modal title={'Detail '+r.number} onClose={onClose}><div className="detail-title"><div className="person"><span className="avatar teal">{initials(r.employeeName)}</span><div><h3>{r.employeeName}</h3><p>{positionLabel(r.position)} · {r.category==='REGULAR'?'Reguler':'Darurat'}</p></div></div><Badge status={r.status}/></div><div className="detail-dates"><div><small>Tanggal efektif</small><strong>{fmt(r.effectiveStart,true)} – {fmt(r.effectiveEnd,true)}</strong></div><b>{r.duration}<small>hari kerja</small></b></div><dl><dt>Tanggal diminta</dt><dd>{fmt(r.start,true)} – {fmt(r.end,true)}</dd><dt>Jenis cuti</dt><dd>{r.subtype}</dd><dt>Email</dt><dd>{r.email}</dd><dt>Nomor HP</dt><dd>{r.phone}</dd><dt>Versi kalender</dt><dd>{r.calendarVersion} · Kuota {r.limit} orang</dd></dl><h4>Alasan pengajuan</h4><p className="reason-text">{r.reason}</p>{r.decisionReason&&<div className="alert info"><span><strong>Catatan keputusan</strong><br/>{r.decisionReason}</span></div>}
+  if(confirmAction){
+    const isCancelRequest=confirmAction==='CANCEL_REQUEST';
+    const isApproveCancel=confirmAction==='APPROVE_CANCEL';
+    const isRejectCancel=confirmAction==='REJECT_CANCEL';
+    const modalTitle=isCancelRequest?'Ajukan pembatalan cuti?':isApproveCancel?'Setujui pembatalan cuti?':isRejectCancel?'Tolak permohonan pembatalan?':confirmAction==='WITHDRAWN'?'Tarik pengajuan ini?':confirmAction==='APPROVED'?'Setujui pengajuan ini?':'Tolak pengajuan ini?';
+    return <Modal key="decision" compact title={modalTitle} onClose={cancelDecision}>
+      <div className="decision-summary"><strong>{r.employeeName}</strong><span>{r.number} · {positionLabel(r.position)}</span><span>{fmt(r.effectiveStart,true)} – {fmt(r.effectiveEnd,true)} · {r.duration} hari kerja</span></div>
+      {isCancelRequest?(
+        <>
+          <p className="reason-text">Permohonan pembatalan cuti akan dikirim ke SDM untuk diverifikasi. Jika disetujui, slot kuota cuti Anda pada bulan ini akan otomatis dilepas kembali.</p>
+          <Field label="Alasan pembatalan cuti" hint="Jelaskan alasan mendesak atau tugas kantor yang tidak dapat ditinggal (min. 5 karakter)">
+            <textarea autoFocus value={reason} onChange={e=>setReason(e.target.value)} minLength={5} maxLength={2000} placeholder="Contoh: Mendapat penugasan dinas mendadak dari pimpinan untuk audit cabang sehingga cuti belum dapat diambil…"/>
+          </Field>
+        </>
+      ):isApproveCancel?(
+        <>
+          <div style={{background:'#fcf8ee',border:'1px solid #f6e6c2',borderRadius:8,padding:'10px 14px',marginBottom:14}}>
+            <small style={{color:'#8f7435',display:'block',marginBottom:3,fontWeight:600}}>Alasan pembatalan karyawan:</small>
+            <span style={{fontSize:12,color:'#3b2f14'}}>{r.cancellation?.reason}</span>
+          </div>
+          <p className="reason-text">Status cuti akan dibatalkan (ditarik). Kuota 1 orang pada bulan ini akan langsung dilepas kembali untuk unit Anda.</p>
+          <Field label="Catatan persetujuan (opsional)">
+            <textarea value={reason} onChange={e=>setReason(e.target.value)} maxLength={2000} placeholder="Catatan untuk karyawan…"/>
+          </Field>
+        </>
+      ):isRejectCancel?(
+        <>
+          <div style={{background:'#fcf8ee',border:'1px solid #f6e6c2',borderRadius:8,padding:'10px 14px',marginBottom:14}}>
+            <small style={{color:'#8f7435',display:'block',marginBottom:3,fontWeight:600}}>Alasan pembatalan karyawan:</small>
+            <span style={{fontSize:12,color:'#3b2f14'}}>{r.cancellation?.reason}</span>
+          </div>
+          <Field label="Alasan penolakan pembatalan" hint="Jelaskan kepada karyawan mengapa permohonan pembatalan tidak diizinkan">
+            <textarea autoFocus value={reason} onChange={e=>setReason(e.target.value)} minLength={5} maxLength={2000} placeholder="Jelaskan alasan penolakan pembatalan (minimal 5 karakter)…"/>
+          </Field>
+        </>
+      ):confirmAction==='REJECTED'?(
+        <Field label="Alasan penolakan"><textarea value={reason} onChange={e=>setReason(e.target.value)} minLength={5} maxLength={2000} placeholder="Jelaskan alasan penolakan…"/></Field>
+      ):(
+        <p className="reason-text">{confirmAction==='WITHDRAWN'?'Slot orang dilepas jika Anda tidak memiliki pengajuan aktif lain pada bulan ini.':'Keputusan akan dicatat dan pemberitahuan diantrekan ke email karyawan.'}</p>
+      )}
+      {error&&<div className="alert danger" role="alert">{error}</div>}
+      <div className="modal-actions">
+        <button className="button secondary" disabled={busy} onClick={cancelDecision}>Kembali</button>
+        {isCancelRequest?(
+          <button className="button danger-button" disabled={busy||reason.trim().length<5} onClick={()=>update('cancel-request',{reason:reason.trim()})}>{busy?'Mengirim…':'Kirim permohonan pembatalan'}</button>
+        ):isApproveCancel?(
+          <button className="button primary" disabled={busy} onClick={()=>update('cancel-review',{outcome:'APPROVED',reason:reason.trim()})}>{busy?'Menyimpan…':'Konfirmasi setujui pembatalan'}</button>
+        ):isRejectCancel?(
+          <button className="button danger-button" disabled={busy||reason.trim().length<5} onClick={()=>update('cancel-review',{outcome:'REJECTED',reason:reason.trim()})}>{busy?'Menyimpan…':'Tolak permohonan'}</button>
+        ):(
+          <button className={'button '+(confirmAction==='APPROVED'?'primary':'danger-button')} disabled={busy||(confirmAction==='REJECTED'&&reason.trim().length<5)} onClick={()=>update(confirmAction==='WITHDRAWN'?'withdraw':'decision',{outcome:confirmAction,reason})}>{busy?'Menyimpan…':'Konfirmasi keputusan'}</button>
+        )}
+      </div>
+    </Modal>;
+  }
+  return <Modal title={'Detail '+r.number} onClose={onClose}><div className="detail-title"><div className="person"><span className="avatar teal">{initials(r.employeeName)}</span><div><h3>{r.employeeName}</h3><p>{positionLabel(r.position)} · {r.category==='REGULAR'?'Reguler':'Darurat'}</p></div></div><Badge status={r.status} cancellation={r.cancellation}/></div><div className="detail-dates"><div><small>Tanggal efektif</small><strong>{fmt(r.effectiveStart,true)} – {fmt(r.effectiveEnd,true)}</strong></div><b>{r.duration}<small>hari kerja</small></b></div><dl><dt>Tanggal diminta</dt><dd>{fmt(r.start,true)} – {fmt(r.end,true)}</dd><dt>Jenis cuti</dt><dd>{r.subtype}</dd><dt>Email</dt><dd>{r.email}</dd><dt>Nomor HP</dt><dd>{r.phone}</dd><dt>Versi kalender</dt><dd>{r.calendarVersion} · Kuota {r.limit} orang</dd></dl>
+    {hasPendingCancellation&&<div className="alert warning" style={{display:'flex',flexDirection:'column',gap:5}}>
+      <div style={{display:'flex',alignItems:'center',gap:7}}><AlertCircle size={18}/><strong>Permohonan Pembatalan Cuti Menunggu Persetujuan SDM</strong></div>
+      <p style={{margin:0,fontSize:12,color:'#825619'}}>Alasan pembatalan karyawan: <em>"{r.cancellation?.reason}"</em><br/><small>Diajukan pada {new Date(r.cancellation!.requestedAt).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'})} WIB</small></p>
+    </div>}
+    {r.status==='APPROVED'&&r.cancellation?.status==='REJECTED'&&<div className="alert danger">
+      <XCircle size={18}/>
+      <div><strong>Permohonan pembatalan cuti sebelumnya ditolak SDM ({r.cancellation.reviewedBy}):</strong><p style={{margin:'2px 0 0',fontSize:12}}>{r.cancellation.decisionReason||'Tidak disetujui oleh SDM.'}</p></div>
+    </div>}
+    {r.status==='WITHDRAWN'&&r.cancellation?.status==='APPROVED'&&<div className="alert info">
+      <CheckCircle2 size={18}/>
+      <div><strong>Cuti Telah Dibatalkan Resmi</strong><p style={{margin:'2px 0 0',fontSize:12}}>Kuota cuti pada bulan ini telah dilepas. Anda dapat menggunakan tombol "Salin ke pengajuan baru" di bawah jika ingin mengajukan jadwal cuti baru (pindah tanggal).</p></div>
+    </div>}
+    <h4>Alasan pengajuan</h4><p className="reason-text">{r.reason}</p>{r.decisionReason&&<div className="alert info"><span><strong>Catatan keputusan</strong><br/>{r.decisionReason}</span></div>}
     <h4>Aktivitas pengajuan</h4><div className="timeline">{r.events.map((e,i)=><div key={i}><i/><strong>{e.text}</strong><small>{e.actor} · {new Date(e.at).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'})} WIB</small></div>)}</div>
     {r.status==='PENDING_SDM'&&r.effectiveStart<today&&<div className="alert danger">Tanggal mulai sudah terlewati. Persetujuan tidak lagi tersedia.</div>}
+    {canReviewCancellation&&<div className="confirmation-box" style={{background:'#fffdf7',borderColor:'#f5e4bd'}}>
+      <div className="confirmation-box-header">
+        <div className="confirmation-title-wrap">
+          <div className="confirmation-box-icon" style={{background:'#faecc9',color:'#9a6f1d'}}><AlertCircle size={18}/></div>
+          <div>
+            <h4>Verifikasi Pembatalan Cuti Disetujui</h4>
+            <p className="confirmation-box-subtitle">Karyawan mengajukan pembatalan cuti karena tugas mendesak atau kendala pekerjaan.</p>
+          </div>
+        </div>
+      </div>
+      <div style={{background:'#fff',padding:'10px 14px',borderRadius:8,border:'1px solid #ede3d0',marginBottom:14}}>
+        <small style={{color:'#887661',display:'block',marginBottom:3,fontWeight:600}}>Alasan Karyawan ({r.employeeName}):</small>
+        <span style={{fontSize:12,color:'#2c2518'}}>{r.cancellation?.reason}</span>
+      </div>
+      <div className="confirmation-actions">
+        <button className="button confirm-yes-btn" onClick={()=>{setReason('');setConfirmAction('APPROVE_CANCEL');}}><Check size={16}/>Setujui Pembatalan (Lepas Kuota)</button>
+        <button className="button confirm-no-btn" onClick={()=>{setReason('');setConfirmAction('REJECT_CANCEL');}}><X size={16}/>Tolak Permohonan Pembatalan</button>
+      </div>
+    </div>}
     {canReview&&r.category==='REGULAR'&&<div className={'confirmation-box '+(r.confirmation==='CONFIRMED'?'confirmed':r.confirmation==='DECLINED'?'declined':'')}>
       <div className="confirmation-box-header">
         <div className="confirmation-title-wrap">
@@ -396,7 +495,12 @@ function Detail({leave:r,user,today,onClose,onUpdate,onCopy}:{leave:Leave;user:E
       )}
     </div>}
     {error&&<div className="alert danger" role="alert">{error}</div>}{r.employeeId===user.id&&['REJECTED','WITHDRAWN'].includes(r.status)&&<button className="button secondary" onClick={onCopy}><Plus size={17}/>Salin ke pengajuan baru</button>}
-    <div className="modal-actions">{r.status==='PENDING_SDM'&&r.employeeId===user.id&&<button className="button secondary" onClick={()=>setConfirmAction('WITHDRAWN')}>Tarik pengajuan</button>}{canReview&&<><button className="button secondary" onClick={()=>setConfirmAction('REJECTED')}>Tolak pengajuan</button><button className="button primary" disabled={busy||r.effectiveStart<today||(r.category==='REGULAR'&&r.confirmation!=='CONFIRMED')} onClick={()=>setConfirmAction('APPROVED')}><Check size={17}/>Setujui pengajuan</button></>}</div>
+    <div className="modal-actions">
+      {r.status==='PENDING_SDM'&&r.employeeId===user.id&&<button className="button secondary" onClick={()=>setConfirmAction('WITHDRAWN')}>Tarik pengajuan</button>}
+      {hasPendingCancellation&&r.employeeId===user.id&&<button className="button secondary" disabled={busy} onClick={()=>update('cancel-abort',{})}>Tarik permohonan pembatalan</button>}
+      {canRequestCancellation&&<button className="button secondary" style={{color:'#ad302b',borderColor:'#f1cfcb'}} onClick={()=>{setReason('');setConfirmAction('CANCEL_REQUEST');}}><X size={16}/>Ajukan pembatalan cuti</button>}
+      {canReview&&<><button className="button secondary" onClick={()=>setConfirmAction('REJECTED')}>Tolak pengajuan</button><button className="button primary" disabled={busy||r.effectiveStart<today||(r.category==='REGULAR'&&r.confirmation!=='CONFIRMED')} onClick={()=>setConfirmAction('APPROVED')}><Check size={17}/>Setujui pengajuan</button></>}
+    </div>
   </Modal>;
 }
 function Admin({onChange,onToast,today,userId}:{onChange:()=>void;onToast:(s:string)=>void;today:string;userId:string}){const [data,setData]=useState<any>(null);const [tab,setTab]=useState(()=>{try{const saved=sessionStorage.getItem('bni_cuti_admin_tab');if(['employees','quota','calendar','jobs','audit'].includes(saved||''))return saved!;}catch{}return 'employees';});const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [editing,setEditing]=useState<any>(null);const [deleting,setDeleting]=useState<Employee|null>(null);const [deleteError,setDeleteError]=useState('');const [date,setDate]=useState('');const [label,setLabel]=useState('');const [working,setWorking]=useState(false);const [qm,setQm]=useState(addMonths(today.slice(0,7)+'-01',1).slice(0,7));const [pos,setPos]=useState('CS_BINA');const [limit,setLimit]=useState(2);const [calYear,setCalYear]=useState('ALL');

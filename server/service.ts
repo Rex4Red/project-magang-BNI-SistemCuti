@@ -53,10 +53,50 @@ export async function submit(db:Database,actor:Employee,body:any,key:string,now:
 export async function act(db:Database,actor:Employee,id:string,action:string,body:any,key:string,now:Date) {
   return mutate(db,actor,key,{id,action,...body},async tx=>{
     const r=(await requests(tx,actor.unit)).find(r=>r.id===id);ensure(r&&canRead(actor,r),'Pengajuan tidak ditemukan.',404);
-    const leave=r!;ensure(leave.status==='PENDING_SDM','Pengajuan sudah diputuskan atau ditarik.',409,'REQUEST_ALREADY_DECIDED');ensure(body.version===leave.version,'Data sudah berubah. Muat ulang.',409,'STALE_VERSION');
+    const leave=r!;ensure(body.version===leave.version,'Data sudah berubah. Muat ulang.',409,'STALE_VERSION');
     let text='';
-    if(action==='withdraw'){ensure(actor.id===leave.employeeId,'Hanya pemohon yang dapat menarik.',403);leave.status='WITHDRAWN';text='Pengajuan ditarik pemohon';}
+    if(action==='withdraw'){
+      ensure(leave.status==='PENDING_SDM','Pengajuan sudah diputuskan atau ditarik.',409,'REQUEST_ALREADY_DECIDED');
+      ensure(actor.id===leave.employeeId,'Hanya pemohon yang dapat menarik.',403);leave.status='WITHDRAWN';text='Pengajuan ditarik pemohon';
+    }
+    else if(action==='cancel-request'){
+      ensure(leave.status==='APPROVED','Hanya cuti yang disetujui yang dapat diajukan pembatalan.',409);
+      ensure(actor.id===leave.employeeId,'Hanya pemohon yang dapat mengajukan pembatalan.',403);
+      ensure(leave.effectiveEnd>=dateOnly(now),'Cuti yang sudah selesai tidak dapat dibatalkan.');
+      ensure(!leave.cancellation||leave.cancellation.status!=='PENDING','Permohonan pembatalan sedang menunggu SDM.',409);
+      ensure(typeof body.reason==='string'&&body.reason.trim().length>=5&&body.reason.length<=2000,'Alasan pembatalan minimal 5 karakter.');
+      leave.cancellation={reason:body.reason.trim(),requestedAt:now.toISOString(),status:'PENDING'};
+      text='Karyawan mengajukan pembatalan cuti: '+body.reason.trim();
+    }
+    else if(action==='cancel-abort'){
+      ensure(leave.status==='APPROVED'&&leave.cancellation?.status==='PENDING','Tidak ada permohonan pembatalan aktif.',409);
+      ensure(actor.id===leave.employeeId,'Hanya pemohon yang dapat menarik permohonan pembatalan.',403);
+      delete leave.cancellation;
+      text='Permohonan pembatalan cuti ditarik oleh karyawan';
+    }
+    else if(action==='cancel-review'){
+      ensure(leave.status==='APPROVED'&&leave.cancellation?.status==='PENDING','Tidak ada permohonan pembatalan aktif untuk ditinjau.',409);
+      ensure(actor.roles.includes('SDM')&&actor.id!==leave.employeeId,'Review pembatalan memerlukan SDM lain yang berwenang.',403);
+      ensure(['APPROVED','REJECTED'].includes(body.outcome),'Keputusan pembatalan tidak valid.');
+      const cancel = leave.cancellation!;
+      if(body.outcome==='APPROVED'){
+        leave.status='WITHDRAWN';
+        cancel.status='APPROVED';
+        cancel.reviewedAt=now.toISOString();
+        cancel.reviewedBy=actor.name;
+        cancel.decisionReason=typeof body.reason==='string'?body.reason.slice(0,2000):'';
+        text='SDM menyetujui pembatalan cuti'+(body.reason?.trim()?': '+body.reason.trim():'');
+      } else {
+        ensure(typeof body.reason==='string'&&body.reason.trim().length>=5&&body.reason.length<=2000,'Alasan penolakan pembatalan minimal 5 karakter.');
+        cancel.status='REJECTED';
+        cancel.reviewedAt=now.toISOString();
+        cancel.reviewedBy=actor.name;
+        cancel.decisionReason=body.reason.trim();
+        text='SDM menolak permohonan pembatalan cuti: '+body.reason.trim();
+      }
+    }
     else {
+      ensure(leave.status==='PENDING_SDM','Pengajuan sudah diputuskan atau ditarik.',409,'REQUEST_ALREADY_DECIDED');
       ensure(actor.roles.includes('SDM')&&actor.id!==leave.employeeId,'Review memerlukan SDM lain yang berwenang.',403);
       if(action==='confirmation') {ensure(leave.category==='REGULAR','Konfirmasi hanya untuk cuti reguler.');ensure(['CONFIRMED','DECLINED'].includes(body.result),'Konfirmasi tidak valid.');ensure(typeof body.channel==='string'&&body.channel.trim().length>=2&&body.channel.length<=120,'Isi kanal konfirmasi.');leave.confirmation=body.result;leave.confirmationChannel=body.channel; text=body.result==='CONFIRMED'?'Karyawan mengonfirmasi jadi cuti':'Karyawan mengonfirmasi tidak jadi cuti';}
       else if(action==='decision'){
@@ -67,7 +107,7 @@ export async function act(db:Database,actor:Employee,id:string,action:string,bod
       }else throw new AppError(404,'Aksi tidak ditemukan.');
     }
     leave.version++;leave.events.push({at:now.toISOString(),text,actor:actor.name});await saveRequest(tx,leave);await audit(tx,actor,action.toUpperCase(),id);
-    if(action==='decision')await mail(tx,leave,'DECISION',now.toISOString());
+    if(action==='decision'||action==='cancel-review')await mail(tx,leave,'DECISION',now.toISOString());
     if(action==='withdraw'||action==='decision'||action==='confirmation')await tx.query("UPDATE mail_jobs SET state='SKIPPED' WHERE request_id=$1 AND kind='REMINDER' AND state='QUEUED'",[id]);
     return leave;
   });
