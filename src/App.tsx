@@ -39,8 +39,8 @@ function getInitialMonth():string{
 }
 export default function App(){
   const [config,setConfig]=useState<any>(null);const [user,setUser]=useState<Employee|null>(null);const [boot,setBoot]=useState(true);const [page,setPage]=useState<Page>(getInitialPage);
-  const [requestMonth,setRequestMonth]=useState('');const [month,setMonth]=useState(getInitialMonth);const [data,setData]=useState<any>(null);const [refresh,setRefresh]=useState(0);const [error,setError]=useState('');const [toast,setToast]=useState('');const [selected,setSelected]=useState<Leave|null>(null);const [draft,setDraft]=useState<Leave|null>(null);const [menu,setMenu]=useState(false);const [loading,setLoading]=useState(false);
-  const sdm=user?.roles.includes('SDM');const admin=user?.roles.includes('ADMIN');
+  const [requestMonth,setRequestMonth]=useState('');const [month,setMonth]=useState(getInitialMonth);const [data,setData]=useState<any>(null);const [refresh,setRefresh]=useState(0);const [error,setError]=useState('');const [toast,setToast]=useState('');const [selected,setSelected]=useState<Leave|null>(null);const [draft,setDraft]=useState<Leave|null>(null);const [menu,setMenu]=useState(false);const [loading,setLoading]=useState(false);  const sdm=user?.roles.includes('SDM');const admin=user?.roles.includes('ADMIN');
+  const canViewRequests=Boolean(sdm||(!admin&&user?.roles.includes('EMPLOYEE')));
   useEffect(()=>{Promise.all([api('/config').then(setConfig),api<Employee>('/me').then(setUser).catch(()=>{})]).finally(()=>setBoot(false));},[]);
   useEffect(()=>{
     if(!user)return;let alive=true;let fetching=false;
@@ -61,18 +61,26 @@ export default function App(){
   useEffect(()=>{
     const onHashChange=()=>{
       const hash=window.location.hash.replace(/^#\/?/,'').split('?')[0] as Page;
-      if(VALID_PAGES.includes(hash)){setPage(hash);try{sessionStorage.setItem('bni_cuti_page',hash);}catch{}}
+      if(VALID_PAGES.includes(hash)){
+        if(hash==='requests'&&user&&!canViewRequests){
+          setPage('dashboard');
+          try{sessionStorage.setItem('bni_cuti_page','dashboard');}catch{}
+          return;
+        }
+        setPage(hash);try{sessionStorage.setItem('bni_cuti_page',hash);}catch{}
+      }
       else if(!hash){setPage('dashboard');try{sessionStorage.setItem('bni_cuti_page','dashboard');}catch{}}
     };
     window.addEventListener('hashchange',onHashChange);
     return()=>window.removeEventListener('hashchange',onHashChange);
-  },[]);
+  },[user,canViewRequests]);
   useEffect(()=>{
     if(!user)return;
     const a=user.roles.includes('ADMIN');
     if(page==='admin'&&!a)nav('dashboard');
     else if(page==='form'&&a)nav('dashboard');
-  },[user]);
+    else if(page==='requests'&&!canViewRequests)nav('dashboard');
+  },[user,page,canViewRequests]);
   const reload=()=>setRefresh(n=>n+1);
   const nav=(p:Page)=>{
     if(p==='requests'&&page!=='requests')setRequestMonth('');
@@ -94,7 +102,9 @@ export default function App(){
     setSelected(null);
     setUser(u);
     const target=getInitialPage();
-    const targetPage=(target==='admin'&&!u.roles.includes('ADMIN'))?'dashboard':target;
+    const uAdmin=u.roles.includes('ADMIN');
+    const uCanRequests=u.roles.includes('SDM')||(!uAdmin&&u.roles.includes('EMPLOYEE'));
+    const targetPage=(target==='admin'&&!uAdmin)?'dashboard':(target==='requests'&&!uCanRequests)?'dashboard':(target==='form'&&uAdmin)?'dashboard':target;
     setPage(targetPage);
     try{
       sessionStorage.setItem('bni_cuti_page',targetPage);
@@ -104,7 +114,11 @@ export default function App(){
   }}/>;
   const positionLabel=(code:string)=>(data?.positions??POSITIONS).find((p:readonly [string,string,number])=>p[0]===code)?.[1]??code;
   const pageTitles:Record<Page,string>={dashboard:'Ringkasan',requests:sdm?'Pengajuan cuti':'Pengajuan saya',calendar:'Kalender cuti',form:'Ajukan cuti',profile:'Profil saya',admin:'Administrasi',notifications:'Pusat notifikasi'};
-  const navItems:[Page,typeof Home,string][]=[['dashboard',LayoutGrid,'Ringkasan'],['requests',FileText,sdm?'Pengajuan cuti':'Pengajuan saya'],['calendar',CalendarDays,'Kalender cuti']];
+  const navItems:[Page,typeof Home,string][]=[
+    ['dashboard',LayoutGrid,'Ringkasan'],
+    ...(canViewRequests?[['requests',FileText,sdm?'Pengajuan cuti':'Pengajuan saya'] as [Page,typeof Home,string]]:[]),
+    ['calendar',CalendarDays,'Kalender cuti']
+  ];
   const pending=data?.requests.filter((r:Leave)=>r.status==='PENDING_SDM'||(sdm&&r.status==='APPROVED'&&r.cancellation?.status==='PENDING')).length??0;
   return <DirectoryContext.Provider value={data?.positions??POSITIONS}><div className="app-shell">
     {menu&&<div className="menu-scrim" onClick={()=>setMenu(false)}/>}
@@ -117,7 +131,7 @@ export default function App(){
       <main><div className="page-heading"><div><h1>{pageTitles[page]}</h1></div>{['dashboard','requests','calendar'].includes(page)&&<div className="heading-actions"><label className="month-control"><CalendarDays size={17}/><input aria-label="Bulan monitoring" type="month" value={month} onChange={e=>{if(e.target.value)setMonth(e.target.value);}}/></label>{page==='requests'&&<label className="month-control"><CalendarDays size={17}/><select aria-label="Filter bulan pengajuan" value={requestMonth} onChange={e=>setRequestMonth(e.target.value)}><option value="">Semua bulan</option>{Array.from(new Set<string>((data?.requests??[]).map((r:Leave)=>(r.effectiveStart||r.start).slice(0,7)).filter((m:string)=>/^\d{4}-\d{2}$/.test(m)))).sort().reverse().map(m=><option key={m} value={m}>{monthLabel(m)}</option>)}</select></label>}{sdm?<a className="button secondary" href={'/api/reports.xlsx?month='+(page==='requests'?(requestMonth||'all'):month)}><ArrowDownToLine size={17}/>Unduh laporan</a>:!admin&&<button className="button primary" onClick={newLeave}><Plus size={18}/>Ajukan cuti</button>}</div>}</div>
       {error&&<div className="alert danger" role="alert">{error}<button onClick={reload}>Coba lagi</button></div>}
       {loading&&!data?<div className="skeleton-grid"><div/><div/><div/></div>:data&&<>
-        {page==='dashboard'&&<Dashboard data={data} month={month} sdm={!!sdm} name={user.name} onSelect={setSelected} onRequests={()=>nav('requests')} onCalendar={()=>nav('calendar')} onNew={newLeave} admin={!!admin}/>}
+        {page==='dashboard'&&<Dashboard data={data} month={month} sdm={!!sdm} name={user.name} onSelect={setSelected} onRequests={()=>nav('requests')} onCalendar={()=>nav('calendar')} onNew={newLeave} admin={!!admin} onAdmin={()=>nav('admin')}/>}
         {page==='requests'&&<RequestList requests={data.requests} month={requestMonth} sdm={!!sdm} onSelect={setSelected} onDraft={(r:Leave)=>{setDraft(r);nav('form');}}/>}
         {page==='calendar'&&<CalendarView data={data} month={month} setMonth={setMonth} onSelect={(id:string)=>api<Leave>('/leave-requests/'+id).then(setSelected).catch(e=>setError(e.message))}/>}
         {page==='form'&&<LeaveForm key={draft?.id??'new'} user={user} today={data.today} draft={draft} calendar={data.calendarConfig} onDelete={()=>{reload();nav('requests');setToast('Draft dihapus.');}} onDone={r=>{if(r.effectiveStart)setMonth(r.effectiveStart.slice(0,7));reload();setSelected(r.status==='DRAFT'?null:r);nav('requests');setToast(r.status==='DRAFT'?'Draft tersimpan.':'Pengajuan berhasil dikirim ke SDM.');}}/>}
@@ -137,15 +151,50 @@ function Login({config,onLogin}:{config:any;onLogin:(u:Employee)=>void}){
   async function login(e:FormEvent){e.preventDefault();setBusy(true);setError('');try{onLogin(await action('/login',{email,password}));}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
   return <div className="login"><div className="login-main"><div className="login-box"><span className="bni-logo"><img src="/images/bni-logo.png" alt="BNI" /></span><h2>Ruang Cuti</h2><form onSubmit={login}><Field label="Email karyawan"><input type="email" autoComplete="username" placeholder="nama@perusahaan.co.id" value={email} onChange={e=>setEmail(e.target.value)} required/></Field><Field label="Kata sandi"><input type="password" autoComplete="current-password" placeholder="Masukkan kata sandi" value={password} onChange={e=>setPassword(e.target.value)} required/></Field>{error&&<div className="alert danger" role="alert">{error}</div>}<button className="button primary full" disabled={busy}>{busy?'Memeriksa akun…':'Masuk'}<ArrowRight size={18}/></button></form>{config?.demo&&<div className="demo-accounts"><span>AKUN DEMO</span><div>{[['SDM','sdm'],['Karyawan','karyawan'],['Admin','admin']].map(([label,account])=><button key={account} onClick={()=>{setEmail(account+'@demo.bni.local');setPassword('BniCuti!2026');setError('');}}>{label}<ArrowUpRight size={13}/></button>)}</div><small>Data contoh untuk uji coba.</small></div>}</div></div></div>;
 }
-function Dashboard({data,month,sdm,onSelect,onRequests,onCalendar}:any){
+function Dashboard({data,month,sdm,onSelect,onRequests,onCalendar,admin,onAdmin}:any){
   const current:Leave[]=data.requests.filter((r:Leave)=>r.effectiveStart.startsWith(month)&&r.status!=='DRAFT');const waiting=current.filter(r=>r.status==='PENDING_SDM');const approved=current.filter(r=>r.status==='APPROVED');const quotas:Quota[]=data.quotas;
   return <>
     <div className="stats-grid">{[
-      {label:'Total pengajuan',value:current.length,unit:'pengajuan'},
-      {label:'Menunggu review',value:waiting.length,unit:'pengajuan'},
-      {label:'Disetujui',value:approved.length,unit:'pengajuan'},
+      ...(admin&&!sdm?[
+        {label:'Total posisi',value:quotas.length,unit:'posisi'},
+        {label:'Karyawan cuti disetujui',value:quotas.reduce((s,q)=>s+q.approved,0),unit:'orang'},
+        {label:'Total kuota limit',value:quotas.reduce((s,q)=>s+q.limit,0),unit:'orang'},
+      ]:[
+        {label:'Total pengajuan',value:current.length,unit:'pengajuan'},
+        {label:'Menunggu review',value:waiting.length,unit:'pengajuan'},
+        {label:'Disetujui',value:approved.length,unit:'pengajuan'},
+      ])
     ].map(s=><article className="stat-card" key={s.label}><div className="stat-head"><span>{s.label}</span></div><div className="stat-value">{s.value}<span>{s.unit}</span></div></article>)}</div>
-    <div className="dashboard-grid"><section className="panel requests-panel"><div className="panel-heading"><div><h2>{sdm?'Pengajuan terbaru':'Pengajuan Anda'} <span className="count-bubble">{current.length}</span></h2></div><button className="text-button" onClick={onRequests}>Lihat semua<ArrowRight size={15}/></button></div><RequestTable requests={current.slice(0,5)} onSelect={onSelect} compact/></section>
+    <div className="dashboard-grid">
+      {admin&&!sdm?<section className="panel requests-panel">
+        <div className="panel-heading"><div><h2>Pusat Administrasi</h2><p>Kelola konfigurasi sistem dan direktori cabang</p></div><button className="text-button" onClick={onAdmin}>Buka Administrasi<ArrowRight size={15}/></button></div>
+        <div style={{padding:'8px 20px 20px',display:'flex',flexDirection:'column',gap:10}}>
+          <button className="shortcut-card" type="button" onClick={onAdmin}>
+            <Users size={19} color="#006776"/>
+            <div>
+              <strong>Direktori Karyawan & Outlet</strong>
+              <small>Kelola data akun, penempatan outlet, dan wewenang pengguna</small>
+            </div>
+            <ArrowUpRight size={15} style={{marginLeft:'auto',color:'#95a5ab'}}/>
+          </button>
+          <button className="shortcut-card" type="button" onClick={onAdmin}>
+            <SlidersHorizontal size={19} color="#ed8b32"/>
+            <div>
+              <strong>Posisi, Kuota & Aturan PGS</strong>
+              <small>Atur kuota orang per bulan dan aturan pejabat pengganti sementara</small>
+            </div>
+            <ArrowUpRight size={15} style={{marginLeft:'auto',color:'#95a5ab'}}/>
+          </button>
+          <button className="shortcut-card" type="button" onClick={onAdmin}>
+            <CalendarDays size={19} color="#4c7a84"/>
+            <div>
+              <strong>Kalender Kerja Cabang</strong>
+              <small>Konfigurasi pola kerja mingguan dan hari libur operasional</small>
+            </div>
+            <ArrowUpRight size={15} style={{marginLeft:'auto',color:'#95a5ab'}}/>
+          </button>
+        </div>
+      </section>:<section className="panel requests-panel"><div className="panel-heading"><div><h2>{sdm?'Pengajuan terbaru':'Pengajuan Anda'} <span className="count-bubble">{current.length}</span></h2></div><button className="text-button" onClick={onRequests}>Lihat semua<ArrowRight size={15}/></button></div><RequestTable requests={current.slice(0,5)} onSelect={onSelect} compact/></section>}
       <section className="panel quota-panel"><div className="panel-heading"><div><h2>Kuota per posisi</h2><p>{monthLabel(month)} · dalam orang</p></div><Users size={19} className="muted"/></div><div className="quota-list">{quotas.slice(0,sdm?6:14).map(q=><div className="quota-row" key={q.position}><div><strong>{q.label}</strong><span><b>{q.used}</b> / {q.limit} <small>orang</small></span></div><div className="progress-track"><span style={{width:(q.limit?100*q.approved/q.limit:0)+'%'}}/><i style={{width:(q.limit?100*q.pending/q.limit:0)+'%'}}/></div></div>)}</div><div className="legend"><span><i className="teal-dot"/>Disetujui</span><span><i className="orange-dot"/>Menunggu</span><span><i className="gray-dot"/>Tersedia</span></div><button className="quota-link" onClick={onCalendar}>Lihat kalender<ArrowRight size={16}/></button></section>
     </div>
 
