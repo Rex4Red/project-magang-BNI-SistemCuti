@@ -16,6 +16,7 @@ export async function openDatabase(location?:string):Promise<Database> {
   }
   const schema=`CREATE TABLE IF NOT EXISTS units (id text PRIMARY KEY, name text NOT NULL, policy jsonb NOT NULL);
     CREATE TABLE IF NOT EXISTS employees (id text PRIMARY KEY, email text UNIQUE NOT NULL, password_hash text NOT NULL, data jsonb NOT NULL);
+    CREATE TABLE IF NOT EXISTS outlets (id text PRIMARY KEY, unit_id text REFERENCES units(id), data jsonb NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions (token text PRIMARY KEY, employee_id text REFERENCES employees(id), expires_at timestamptz NOT NULL);
     CREATE TABLE IF NOT EXISTS requests (id text PRIMARY KEY, employee_id text REFERENCES employees(id), unit_id text REFERENCES units(id), position text NOT NULL, status text NOT NULL, month text NOT NULL, data jsonb NOT NULL);
     CREATE INDEX IF NOT EXISTS requests_scope ON requests(unit_id,month,position,status);

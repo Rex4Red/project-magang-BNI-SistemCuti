@@ -7,9 +7,11 @@ import {randomBytes,randomUUID} from 'node:crypto';
 import {resolve} from 'node:path';
 import {z,ZodError} from 'zod';
 import type {Database} from './db';
+import {directoryRoutes} from './directory';
+import {assignedDuring,employeeOutlet,outlets,replacementCheck} from './replacement';
 import {AppError,act,audit,canRead,checkEmail,digest,employees,ensure,getPolicy,inputSchema,mutate,preview,requests,saveRequest,submit} from './service';
 import {buildExcelReport,buildXlsxReport} from './reports';
-import {ACTIVE,HOLIDAYS_2027,PASSWORD_PATTERN,PASSWORD_HINT,POSITIONS,blockedDays,dateOnly,evaluate,limitFor,quotaFor,validDate,type Employee,type Leave,type Policy} from '../shared/domain';
+import {ACTIVE,HOLIDAYS_2027,PASSWORD_PATTERN,PASSWORD_HINT,positionsFor,blockedDays,dateOnly,evaluate,limitFor,quotaFor,validDate,type Employee,type Leave,type Policy} from '../shared/domain';
 declare global {namespace Express {interface Request {actor:Employee;}}}
 export function createApp(db:Database,options:{demo:boolean;now?:()=>Date;origin?:string}) {
   const app=express();const now=options.now??(()=>new Date());const production=process.env.NODE_ENV==='production';
@@ -50,13 +52,18 @@ export function createApp(db:Database,options:{demo:boolean;now?:()=>Date;origin
   app.get('/api/dashboard',async(req,res)=>{
     const month=z.string().regex(/^20\d{2}-(0[1-9]|1[0-2])$/).parse(req.query.month);const actor=req.actor;const all=await requests(db,actor.unit);const policy=await getPolicy(db,actor.unit);const sdm=actor.roles.includes('SDM');
     const visible=all.filter(r=>sdm?r.status!=='DRAFT':r.employeeId===actor.id).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
-    const quotas=POSITIONS.filter(p=>sdm||actor.roles.includes('ADMIN')||p[0]===actor.position).map(([code])=>quotaFor(code,month,all,limitFor(code,month,policy,all),actor.id));
+    const positions=positionsFor(policy);const quotas=positions.filter(p=>sdm||actor.roles.includes('ADMIN')||p[0]===actor.position).map(([code,label])=>({...quotaFor(code,month,all,limitFor(code,month,policy,all),actor.id),label}));
     const calendar=all.filter(r=>ACTIVE.includes(r.status)&&r.effectiveStart.slice(0,7)===month&&(sdm||r.position===actor.position)).map(r=>({id:sdm||r.employeeId===actor.id?r.id:'',name:sdm||r.employeeId===actor.id?r.employeeName:'Rekan satu posisi',position:r.position,status:r.status,days:r.days}));
-    res.json({requests:visible,quotas,calendar,blocked:blockedDays(month,policy.calendar),calendarConfig:policy.calendar,today:dateOnly(now()),unitName:(await db.query('SELECT name FROM units WHERE id=$1',[actor.unit])).rows[0].name});
+    res.json({requests:visible,quotas,calendar,positions,blocked:blockedDays(month,policy.calendar),calendarConfig:policy.calendar,today:dateOnly(now()),unitName:(await db.query('SELECT name FROM units WHERE id=$1',[actor.unit])).rows[0].name});
   });
   app.post('/api/leave-requests/preview',async(req,res)=>{const input=inputSchema.parse(req.body);checkEmail(input.email);res.json(await preview(db,req.actor,input,now()));});
   app.post('/api/leave-requests',async(req,res)=>res.status(201).json(await submit(db,req.actor,req.body,req.get('idempotency-key')??'',now())));
   app.get('/api/leave-requests/:id',async(req,res)=>{const r=(await requests(db,req.actor.unit)).find(r=>r.id===req.params.id);ensure(r&&canRead(req.actor,r),'Pengajuan tidak ditemukan.',404);res.json(r);});
+  app.get('/api/leave-requests/:id/replacements',async(req,res)=>{
+    ensure(req.actor.roles.includes('SDM'),'Akses SDM diperlukan.',403);
+    const leave=(await requests(db,req.actor.unit)).find(r=>r.id===req.params.id);ensure(leave&&canRead(req.actor,leave),'Pengajuan tidak ditemukan.',404);
+    res.json(await replacementCheck(db,leave!,await getPolicy(db,req.actor.unit)));
+  });
   app.post('/api/leave-requests/:id/:action',async(req,res)=>res.json(await act(db,req.actor,req.params.id as string,req.params.action as string,req.body,req.get('idempotency-key')??'',now())));
   app.post('/api/drafts',async(req,res)=>{
     const body=z.object({id:z.string().optional(),version:z.number().optional(),category:z.enum(['REGULAR','EMERGENCY']),subtype:z.string().max(120),reason:z.string().max(2000),start:z.string().max(10),end:z.string().max(10),email:z.string().max(200),phone:z.string().max(20)}).parse(req.body);
@@ -68,12 +75,15 @@ export function createApp(db:Database,options:{demo:boolean;now?:()=>Date;origin
   app.get('/api/reports.xls',async(req,res)=>{ensure(req.actor.roles.includes('SDM'),'Akses SDM diperlukan.',403);const month=z.union([z.literal('all'),z.string().regex(/^20\d{2}-(0[1-9]|1[0-2])$/)]).parse(req.query.month);const rows=(await requests(db,req.actor.unit)).filter(r=>(month==='all'||r.effectiveStart.startsWith(month))&&r.status!=='DRAFT');const xls=buildExcelReport(rows,req.actor,month,now());await audit(db,req.actor,'EXPORT',month);res.attachment(`monitoring-cuti-${month}.xls`).type('application/vnd.ms-excel; charset=utf-8').send(xls);});
   app.get('/api/reports.csv',async(req,res)=>{ensure(req.actor.roles.includes('SDM'),'Akses SDM diperlukan.',403);const month=z.union([z.literal('all'),z.string().regex(/^20\d{2}-(0[1-9]|1[0-2])$/)]).parse(req.query.month);const rows=(await requests(db,req.actor.unit)).filter(r=>(month==='all'||r.effectiveStart.startsWith(month))&&r.status!=='DRAFT');const cell=(v:string|number)=>'"'+String(v).replace(/^[=+@-]/,"'$&").replaceAll('"','""')+'"';const csv=[['Nomor','Nama','Posisi','Kategori','Mulai','Akhir','Hari kerja','Status'],...rows.map(r=>[r.number,r.employeeName,r.position,r.category,r.effectiveStart,r.effectiveEnd,r.duration,r.status])].map(r=>r.map(cell).join(',')).join('\r\n');await audit(db,req.actor,'EXPORT',month);res.attachment(`monitoring-cuti-${month}.csv`).type('text/csv').send('\uFEFF'+csv);});
   app.use('/api/admin',(req,_res,next)=>{try{ensure(req.actor.roles.includes('ADMIN'),'Akses administrator diperlukan.',403);next();}catch(e){next(e);}});
-  app.get('/api/admin',async(req,res)=>{const list=(await employees(db)).filter(e=>e.unit===req.actor.unit);const jobs=(await db.query('SELECT id,kind,due_at,state,attempts,last_error FROM mail_jobs WHERE unit_id=$1 ORDER BY created_at DESC LIMIT 100',[req.actor.unit])).rows;const logs=(await db.query('SELECT * FROM audit WHERE unit_id=$1 ORDER BY at DESC LIMIT 100',[req.actor.unit])).rows;res.json({employees:list,policy:await getPolicy(db,req.actor.unit),jobs,audit:logs});});
+  directoryRoutes(app,db,now);
+  app.get('/api/admin',async(req,res)=>{const list=(await employees(db)).filter(e=>e.unit===req.actor.unit);const jobs=(await db.query('SELECT id,kind,due_at,state,attempts,last_error FROM mail_jobs WHERE unit_id=$1 ORDER BY created_at DESC LIMIT 100',[req.actor.unit])).rows;const logs=(await db.query('SELECT * FROM audit WHERE unit_id=$1 ORDER BY at DESC LIMIT 100',[req.actor.unit])).rows;const policy=await getPolicy(db,req.actor.unit);res.json({employees:list,policy,positions:positionsFor(policy),outlets:await outlets(db,req.actor.unit),jobs,audit:logs});});
   app.post('/api/admin/employee',async(req,res)=>{
-    const body=z.object({id:z.string().optional(),name:z.string().trim().min(2).max(100),email:z.email().max(200),phone:z.string().min(8).max(20),position:z.enum(POSITIONS.map(p=>p[0]) as [string,...string[]]),roles:z.array(z.enum(['EMPLOYEE','SDM','ADMIN'])).min(1),active:z.boolean(),password:z.string().max(200).regex(PASSWORD_PATTERN,PASSWORD_HINT).optional()}).parse(req.body);
+    const body=z.object({id:z.string().optional(),name:z.string().trim().min(2).max(100),email:z.email().max(200),phone:z.string().min(8).max(20),position:z.string().max(40),outletId:z.string().optional(),roles:z.array(z.enum(['EMPLOYEE','SDM','ADMIN'])).min(1),active:z.boolean(),password:z.string().max(200).regex(PASSWORD_PATTERN,PASSWORD_HINT).optional()}).parse(req.body);
     res.json(await mutate(db,req.actor,req.get('idempotency-key')??'',{action:'employee',...body},async tx=>{const existing=body.id?(await employees(tx)).find(e=>e.id===body.id&&e.unit===req.actor.unit):undefined;if(body.id)ensure(existing,'Pegawai tidak ditemukan.',404);if(!body.id)ensure(body.password,'Kata sandi awal wajib diisi.');if(body.id===req.actor.id)ensure(body.active&&body.roles.includes('ADMIN'),'Anda tidak dapat menonaktifkan akses admin sendiri.');
-      if(existing&&(existing.position!==body.position||!body.active))ensure(!(await requests(tx,req.actor.unit)).some(r=>r.employeeId===existing.id&&ACTIVE.includes(r.status)&&r.effectiveEnd>=dateOnly(now())),'Selesaikan pengajuan aktif sebelum mengubah posisi/menonaktifkan.');
-      const {password,id,...fields}=body;const e:Employee={...fields,email:body.email.toLowerCase(),id:existing?.id??randomUUID(),unit:req.actor.unit};const pw=password?await hash(password,12):(await tx.query('SELECT password_hash FROM employees WHERE id=$1',[e.id])).rows[0].password_hash;
+      const position=positionsFor(await getPolicy(tx,req.actor.unit)).find(p=>p[0]===body.position);ensure(position,'Posisi tidak tersedia.');
+      const outletId=body.outletId??(existing?employeeOutlet(existing):employeeOutlet(req.actor));ensure((await outlets(tx,req.actor.unit)).some(o=>o.id===outletId),'Outlet tidak tersedia dalam cabang ini.');
+      if(existing&&(existing.position!==body.position||employeeOutlet(existing)!==outletId||!body.active||!body.roles.includes('EMPLOYEE'))){const all=await requests(tx,req.actor.unit);ensure(!all.some(r=>r.employeeId===existing.id&&ACTIVE.includes(r.status)&&r.effectiveEnd>=dateOnly(now())),'Selesaikan pengajuan aktif sebelum mengubah posisi/outlet/akses.');ensure(!all.some(r=>assignedDuring(r,existing.id,dateOnly(now()))),'Karyawan masih memiliki tugas PGS aktif.',409);}
+      const {password,id,...fields}=body;const e:Employee={...fields,outletId,positionName:position![1],email:body.email.toLowerCase(),id:existing?.id??randomUUID(),unit:req.actor.unit};const pw=password?await hash(password,12):(await tx.query('SELECT password_hash FROM employees WHERE id=$1',[e.id])).rows[0].password_hash;
       await tx.query('INSERT INTO employees(id,email,password_hash,data) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET email=excluded.email,password_hash=excluded.password_hash,data=excluded.data',[e.id,e.email,pw,e]);await audit(tx,req.actor,'EMPLOYEE_UPDATE',e.id);return e;}));
   });
   app.delete('/api/admin/employee/:id',async(req,res)=>{
@@ -82,6 +92,7 @@ export function createApp(db:Database,options:{demo:boolean;now?:()=>Date;origin
       ensure(employee,'Karyawan tidak ditemukan.',404);
       ensure(employee!.id!==req.actor.id,'Anda tidak dapat menghapus akun sendiri.',409);
       const leaves=await requests(tx,req.actor.unit);
+      ensure(!leaves.some(r=>assignedDuring(r,employee!.id,dateOnly(now()))),'Karyawan masih memiliki tugas PGS aktif.',409);
       ensure(!leaves.some(r=>r.employeeId===employee!.id&&(r.status==='PENDING_SDM'||(r.status==='APPROVED'&&r.effectiveEnd>=dateOnly(now())))),'Selesaikan pengajuan yang menunggu review atau cuti aktif sebelum menghapus karyawan.',409);
       const deleted={...employee!,active:false,deletedAt:now().toISOString()};
       await tx.query('UPDATE employees SET data=$1 WHERE id=$2',[deleted,deleted.id]);
@@ -114,7 +125,7 @@ export function createApp(db:Database,options:{demo:boolean;now?:()=>Date;origin
       return changed;
     }));
   });
-  app.post('/api/admin/quota',async(req,res)=>{const body=z.object({month:z.string().regex(/^20\d{2}-(0[1-9]|1[0-2])$/),position:z.enum(POSITIONS.map(p=>p[0]) as [string,...string[]]),limit:z.number().int().min(0).max(1000)}).parse(req.body);res.json(await mutate(db,req.actor,req.get('idempotency-key')??'',{action:'quota',...body},async tx=>{ensure(body.month>dateOnly(now()).slice(0,7),'Kuota hanya dapat diubah untuk bulan mendatang.');const all=await requests(tx,req.actor.unit);ensure(!all.some(r=>r.position===body.position&&r.effectiveStart.startsWith(body.month)&&r.status!=='DRAFT'),'Kuota bulan ini sudah memiliki alokasi dan dibekukan.',409);const policy=await getPolicy(tx,req.actor.unit);const defaults=Object.fromEntries(POSITIONS.map(([p])=>[p,limitFor(p,body.month,policy,[])]));policy.quotas[body.month]={...defaults,...policy.quotas[body.month],[body.position]:body.limit};await tx.query('UPDATE units SET policy=$1 WHERE id=$2',[policy,req.actor.unit]);await audit(tx,req.actor,'QUOTA_UPDATE',body.position+':'+body.month);return policy;}));});
+  app.post('/api/admin/quota',async(req,res)=>{const body=z.object({month:z.string().regex(/^20\d{2}-(0[1-9]|1[0-2])$/),position:z.string(),limit:z.number().int().min(0).max(1000)}).parse(req.body);res.json(await mutate(db,req.actor,req.get('idempotency-key')??'',{action:'quota',...body},async tx=>{ensure(body.month>dateOnly(now()).slice(0,7),'Kuota hanya dapat diubah untuk bulan mendatang.');const all=await requests(tx,req.actor.unit);ensure(!all.some(r=>r.position===body.position&&r.effectiveStart.startsWith(body.month)&&r.status!=='DRAFT'),'Kuota bulan ini sudah memiliki alokasi dan dibekukan.',409);const policy=await getPolicy(tx,req.actor.unit);ensure(positionsFor(policy).some(p=>p[0]===body.position),'Posisi tidak tersedia.');const defaults=Object.fromEntries(positionsFor(policy).map(([p])=>[p,limitFor(p,body.month,policy,[])]));policy.quotas[body.month]={...defaults,...policy.quotas[body.month],[body.position]:body.limit};await tx.query('UPDATE units SET policy=$1 WHERE id=$2',[policy,req.actor.unit]);await audit(tx,req.actor,'QUOTA_UPDATE',body.position+':'+body.month);return policy;}));});
   app.post('/api/admin/jobs/:id/retry',async(req,res)=>{await db.query("UPDATE mail_jobs SET state='QUEUED',attempts=0,due_at=$1,last_error=NULL WHERE id=$2 AND unit_id=$3 AND state='FAILED'",[now().toISOString(),req.params.id,req.actor.unit]);await audit(db,req.actor,'MAIL_RETRY',req.params.id as string);res.json({ok:true});});
   app.use('/api',(_req,_res,next)=>next(new AppError(404,'Endpoint tidak ditemukan.')));
   app.use(express.static(resolve('dist')));app.get('/{*path}',(_req,res)=>res.sendFile(resolve('dist/index.html')));

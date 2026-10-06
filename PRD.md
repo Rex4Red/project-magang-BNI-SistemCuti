@@ -1,7 +1,9 @@
 # PRD — Sistem Pengajuan dan Monitoring Cuti BNI
 
-Versi: 0.2 — kuota orang dan H-3 hari kerja  
-Tanggal: 29 September 2026  
+Versi: 0.3 — posisi, outlet, dan pengganti sementara (PGS)
+
+Tanggal: 5 Oktober 2026
+
 Bahasa aplikasi: Indonesia  
 Dokumen terkait: [Desain](design.md) · [Arsitektur](architecture.md)
 
@@ -28,6 +30,7 @@ Dokumen ini merupakan rancangan kebutuhan berdasarkan permintaan pengguna, bukan
 6. Dashboard, kalender, riwayat, detail pengajuan, dan ekspor monitoring SDM.
 7. Email pengingat SDM, email keputusan karyawan, retry, dan status pengiriman.
 8. Pengelolaan kebijakan dan audit oleh administrator yang berwenang.
+9. Master posisi/outlet yang dapat ditambah atau dihapus serta pemeriksaan ketersediaan PGS sebelum approval.
 
 ## 2. Pengguna dan kewenangan
 
@@ -82,6 +85,22 @@ Angka berikut adalah jumlah orang berbeda yang boleh cuti per posisi per bulan. 
 | CLEANING_STAFF | Cleaning Staff | 2 |
 
 CS BINA dan CS FTE adalah posisi berbeda untuk pemeriksaan kuota/irisan. Penyebutan “CS” secara umum pada contoh tidak otomatis menggabungkan keduanya. Posisi dan unit diambil dari master pegawai, tidak dipilih bebas dalam form.
+
+### Master posisi, outlet, dan aturan PGS
+
+Daftar posisi di atas merupakan data awal. Administrator dapat menambah posisi dengan kode, nama, serta kuota awal orang per bulan, dan menghapus posisi yang sudah tidak digunakan. Administrator juga dapat menambah, mengganti nama, atau menghapus outlet, kemudian menempatkan setiap karyawan pada satu outlet melalui direktori karyawan. Outlet berada di dalam unit/cabang; lingkup SDM dan kuota bulanan tetap per unit/cabang, tidak dipisah per outlet.
+
+Semua posisi dimulai dengan **aturan PGS belum diatur**, termasuk BM. Contoh BM → BBO bukan aturan bawaan. Untuk setiap posisi cuti, administrator dapat memilih satu atau beberapa posisi yang boleh menggantikan, mengizinkan outlet yang sama, dan menentukan apakah pengganti dari outlet lain dilarang, diizinkan dari seluruh outlet dalam cabang, atau hanya dari outlet yang dipilih. Aturan dapat diaktifkan atau dinonaktifkan.
+
+Jika aturan aktif, SDM harus mendapatkan setidaknya satu calon yang tersedia selama seluruh tanggal kerja efektif cuti sebelum menyetujui. **Memilih atau menetapkan satu orang bukan kewajiban**. Aturan yang belum diatur/nonaktif ditampilkan secara jelas dan alur approval tetap berjalan dengan pemeriksaan cuti yang sudah ada.
+
+Calon harus aktif, memiliki akses karyawan, memenuhi posisi dan sumber outlet, serta bukan pemohon. Calon tidak tersedia jika memiliki pengajuan pending/cuti disetujui atau tugas PGS yang sudah dicatat pada satu tanggal efektif yang beririsan. Batas irisan dua hari untuk pengajuan pada posisi sama tidak membolehkan benturan tugas PGS.
+
+SDM boleh mencatat seorang PGS secara opsional saat approval. Pencatatan ini memesan seluruh tanggal efektif sehingga orang tersebut tidak dapat ditetapkan sebagai PGS lain atau mengajukan cuti pada tanggal beririsan. Tugas PGS tidak memakai kuota cuti pribadi. Jika SDM hanya mengecek ketersediaan, sistem menyimpan waktu pemeriksaan tanpa memesan calon tertentu; pengecekan tidak otomatis membentuk penugasan.
+
+Backend memeriksa ulang ketersediaan saat menyimpan keputusan dalam transaksi. Jika calon sudah tidak tersedia, approval ditolak dan SDM perlu memeriksa kembali. Pembatalan cuti yang masih menunggu review atau ditolak tetap mempertahankan tugas PGS; pembatalan yang disetujui melepas tugas tersebut. Riwayat penugasan tetap tersimpan.
+
+Penghapusan master ditolak ketika masih dipakai karyawan, aturan terkait, atau cuti/tugas PGS aktif. Perubahan posisi, outlet, penonaktifan, atau penghapusan karyawan yang memiliki cuti/tugas PGS aktif juga diblokir. Data lama mendapat satu outlet awal secara otomatis; pengajuan, kontak, kuota, dan keputusan lama dipertahankan.
 
 ## 5. Aturan bisnis
 

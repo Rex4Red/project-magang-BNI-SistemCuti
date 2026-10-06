@@ -2,6 +2,39 @@ import {test,expect,type Page} from '@playwright/test';
 import {mkdirSync} from 'node:fs';
 import {addMonths,addDays,blockedDays,isWorking,DEFAULT_CALENDAR} from '../../shared/domain';
 async function login(page:Page,role:string){await page.goto('/');await page.getByRole('button',{name:role,exact:true}).click();await page.getByRole('button',{name:'Masuk',exact:true}).click();await expect(page.getByRole('heading',{name:'Ringkasan',exact:true})).toBeVisible();}
+test('admin configures PGS across outlets and SDM checks availability before approval',async({page,browser},testInfo)=>{
+  await login(page,'Admin');await page.getByRole('button',{name:'Administrasi',exact:true}).click();
+  await page.getByRole('button',{name:'Posisi',exact:true}).click();
+  await page.getByLabel('Kode posisi').fill('PGS_TEST');await page.getByLabel('Nama posisi').fill('Posisi Uji Master');await page.getByRole('button',{name:'Tambah posisi',exact:true}).click();
+  const positionRow=page.getByRole('row').filter({hasText:'Posisi Uji Master'});await expect(positionRow).toBeVisible();await positionRow.getByRole('button',{name:'Hapus posisi'}).click();await page.getByRole('button',{name:'Konfirmasi hapus',exact:true}).click();await expect(positionRow).toHaveCount(0);
+  await page.getByRole('button',{name:'Outlet',exact:true}).click();await page.getByLabel('Nama outlet').fill('Outlet PGS E2E');await page.getByRole('button',{name:'Tambah outlet',exact:true}).click();
+  await expect(page.getByRole('cell',{name:'Outlet PGS E2E',exact:true})).toBeVisible();
+  const directory=await (await page.request.get('/api/admin')).json();const otherOutlet=directory.outlets.find((o:any)=>o.name==='Outlet PGS E2E');const home=directory.outlets.find((o:any)=>o.id!==otherOutlet.id);
+  const create=async(name:string,email:string,position:string,outletId:string)=>{const response=await page.request.post('/api/admin/employee',{headers:{'X-Cuti-Client':'web','Idempotency-Key':crypto.randomUUID()},data:{name,email,position,outletId,phone:'081234567899',roles:['EMPLOYEE'],active:true,password:'abc123'}});expect(response.ok()).toBe(true);};
+  await create('BM Outlet Uji','bm-ui@demo.bni.local','BM',home.id);await create('BBO Outlet Uji','bbo-ui@demo.bni.local','BBO',otherOutlet.id);
+  await page.getByRole('button',{name:'Aturan PGS',exact:true}).click();await page.getByRole('button',{name:'Atur PGS BM',exact:true}).click();
+  await page.getByLabel('BBO',{exact:true}).check();await page.getByLabel('Boleh dari outlet yang sama').uncheck();await page.getByLabel('Pengganti dari outlet lain').selectOption('SELECTED');await page.getByLabel('Outlet PGS E2E',{exact:true}).check();await page.getByRole('button',{name:'Simpan aturan PGS'}).click();
+  await expect(page.getByRole('row').filter({has:page.getByRole('cell',{name:'BM',exact:true})})).toContainText('Aktif');
+  await page.screenshot({path:testInfo.outputPath('admin-pgs.png'),fullPage:true});
+  await page.getByRole('button',{name:'Atur PGS BM',exact:true}).click();await page.setViewportSize({width:390,height:844});
+  await expect.poll(()=>page.getByRole('dialog').evaluate(el=>el.scrollWidth<=el.clientWidth&&el.getBoundingClientRect().right<=innerWidth)).toBe(true);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:testInfo.outputPath('admin-pgs-mobile.png'),fullPage:true});await page.getByRole('button',{name:'Batal',exact:true}).click();
+  const employeeContext=await browser.newContext();const employee=await employeeContext.newPage();await employee.goto('/');await employee.getByLabel('Email karyawan').fill('bm-ui@demo.bni.local');await employee.getByLabel('Kata sandi',{exact:true}).fill('abc123');await employee.getByRole('button',{name:'Masuk',exact:true}).click();
+  await expect(employee.getByRole('heading',{name:'Ringkasan',exact:true})).toBeVisible();
+  const config=await (await employee.request.get('/api/config')).json();let start=addMonths(config.today,1);while(!isWorking(start,DEFAULT_CALENDAR)||blockedDays(start.slice(0,7),DEFAULT_CALENDAR).includes(start))start=addDays(start,1);
+  const input={category:'REGULAR',subtype:'Keperluan keluarga',reason:'Pengujian pengganti dari outlet lain.',start,end:start,email:'bm-ui@demo.bni.local',phone:'081234567899'};
+  const previewResponse=await employee.request.post('/api/leave-requests/preview',{headers:{'X-Cuti-Client':'web'},data:input});const preview=await previewResponse.json();expect(previewResponse.status(),JSON.stringify(preview)).toBe(200);
+  const response=await employee.request.post('/api/leave-requests',{headers:{'X-Cuti-Client':'web','Idempotency-Key':crypto.randomUUID()},data:{...input,fingerprint:preview.fingerprint,acceptAdjustment:true}});const leave=await response.json();expect(response.status(),JSON.stringify(leave)).toBe(201);
+  const hrContext=await browser.newContext();const hr=await hrContext.newPage();await login(hr,'SDM');await hr.locator('nav').getByRole('button',{name:/Pengajuan cuti/}).click();await hr.getByLabel('Cari pengajuan').fill(leave.number);await hr.getByRole('button',{name:'Lihat BM Outlet Uji '+leave.number,exact:true}).click();
+  await expect(hr.locator('.pgs-panel')).toContainText('1 calon tersedia');await expect(hr.locator('.pgs-panel')).toContainText('BBO Outlet Uji');await expect(hr.locator('.pgs-panel')).toContainText('Outlet PGS E2E');
+  await hr.getByRole('button',{name:'Jadi mengambil cuti',exact:true}).click();await expect(hr.getByRole('button',{name:'Setujui pengajuan',exact:true})).toBeEnabled();
+  await expect(hr.getByLabel('Tetapkan PGS (opsional)')).toHaveValue('');await hr.screenshot({path:testInfo.outputPath('sdm-pgs.png'),fullPage:true});
+  await hr.setViewportSize({width:390,height:844});await hr.screenshot({path:testInfo.outputPath('sdm-pgs-mobile.png'),fullPage:true});
+  expect(await hr.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await hr.getByRole('button',{name:'Setujui pengajuan',exact:true}).click();await hr.getByRole('button',{name:'Konfirmasi keputusan'}).click();await expect(hr.getByRole('dialog').getByText('Disetujui',{exact:true})).toBeVisible();
+  await employeeContext.close();await hrContext.close();
+});
 test('admin creates an employee with a six-character alphanumeric password',async({page,browser})=>{
   await login(page,'Admin');await page.getByRole('button',{name:'Administrasi',exact:true}).click();
   await page.getByRole('button',{name:'Tambah karyawan',exact:true}).click();
@@ -43,7 +76,7 @@ test('employee submits regular leave, SDM confirms and approves, email captured'
   const pendingCard=hr.locator('.stat-card').filter({hasText:'Menunggu review'}).locator('.stat-value');
   const pendingBefore=Number.parseInt(await pendingCard.innerText(),10);
   await page.locator('nav').getByRole('button',{name:'Ajukan cuti',exact:true}).click();
-  await page.getByLabel('Jenis cuti',{exact:true}).selectOption('Keperluan keluarga');await page.getByLabel('Alasan pengajuan').fill('Menghadiri acara keluarga untuk pengujian aplikasi.');
+  await page.getByRole('combobox',{name:'Jenis cuti',exact:true}).selectOption('Keperluan keluarga');await page.getByLabel('Alasan pengajuan').fill('Menghadiri acara keluarga untuk pengujian aplikasi.');
   await page.getByLabel('Tanggal mulai',{exact:true}).fill(start);await page.getByLabel('Tanggal akhir',{exact:true}).fill(start);
   await expect(page.getByRole('button',{name:'Tinjau pengajuan'})).toBeEnabled();await page.getByRole('button',{name:'Tinjau pengajuan'}).click();await page.getByRole('button',{name:'Kirim pengajuan'}).click();
   const dialog=page.getByRole('dialog');await expect(dialog.getByText('Menunggu review',{exact:true})).toBeVisible();const title=await dialog.locator('.modal-header h2').innerText();const number=title.replace('Detail ','');

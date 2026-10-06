@@ -1,7 +1,9 @@
 # Arsitektur — Sistem Pengajuan dan Monitoring Cuti BNI
 
-Versi: 0.2 — kuota orang dan H-3 hari kerja  
-Tanggal: 29 September 2026  
+Versi: 0.3 — posisi, outlet, dan pengganti sementara (PGS)
+
+Tanggal: 5 Oktober 2026
+
 Acuan: [PRD](PRD.md) · [Desain](design.md)
 
 ## 1. Keputusan utama
@@ -34,6 +36,7 @@ flowchart LR
 |---|---|
 | Identity & Access | Login, session, peran, lingkup unit, pemisahan tugas |
 | Employee Directory | Profil, posisi, unit, kontak, status aktif |
+| Replacement Directory | Master posisi/outlet, aturan sumber PGS, pemeriksaan ketersediaan, penugasan opsional |
 | Policy & Calendar | Kuota orang bulanan, masa tunggu, H-3 hari kerja, batas irisan, kalender kerja |
 | Leave Application | Draft, preview, submit, detail, penarikan |
 | Quota & Schedule | Slot orang unik per bulan, lock kapasitas, batas orang bersamaan, pemeriksaan benturan |
@@ -358,3 +361,27 @@ Gunakan clock yang dapat dikendalikan untuk tes jadwal dan tengah malam. AC06 da
 6. Uji konkurensi, akses, skenario kalender nyata, dan UAT SDM sebelum pilot.
 
 Keputusan yang belum ditutup mengikuti daftar asumsi PRD: cakupan unit, label Cleaning Staff, dan alur konfirmasi/email. H-3 tiga hari kerja, darurat hanya bebas masa tunggu, nama BTRM, kuota orang per bulan, dan batas orang bersamaan sesuai kuota sudah dikonfirmasi. Implementasi harus mengikuti keputusan tersebut.
+
+## 15. Implementasi master dan pemeriksaan PGS
+
+Modul `server/directory.ts` menyediakan CRUD outlet/posisi dan penyimpanan aturan PGS. Modul `server/replacement.ts` menjalankan migrasi data lama serta pemeriksaan calon. Semua penulisan menggunakan `mutate`, idempotency key, pemeriksaan profil terbaru, dan lock baris unit yang sama dengan transaksi pengajuan/approval. Endpoint pemeriksaan hanya dapat diakses SDM dalam unit pengajuan.
+
+Penyimpanan aktual mengikuti snapshot JSONB yang sudah digunakan aplikasi:
+
+| Lokasi | Data tambahan |
+|---|---|
+| `outlets` | `id`, `unit_id`, dan JSONB nama/status arsip |
+| `units.policy.positions` | Daftar kode, nama, dan kuota awal posisi; fallback ke master awal jika field belum ada |
+| `units.policy.replacementRules` | Aturan per posisi: aktif, posisi sumber, izin outlet sama, mode outlet lain, ID outlet yang dipilih |
+| `employees.data` | `outletId` dan nama posisi; unit tetap menjadi lingkup akses |
+| `requests.data` | Snapshot outlet/nama posisi pemohon, `replacementCheckedAt`, dan snapshot penugasan `replacement` bila dipilih |
+
+Startup membuat satu outlet awal per unit dengan ID stabil dan mengisi outlet pada pegawai/pengajuan lama yang belum memilikinya. Proses dapat dijalankan ulang tanpa menduplikasi outlet, mengubah tanggal/status/kuota, atau membuat aturan PGS. Outlet yang sudah diarsipkan tidak diaktifkan kembali.
+
+Pemeriksaan mengambil calon aktif berperan karyawan dalam cabang yang sama, mengeluarkan pemohon, lalu memfilter posisi dan outlet menurut aturan terbaru. Calon tidak tersedia jika tanggal kerja efektif beririsan dengan cuti pending/disetujui miliknya atau penugasan PGS pada cuti disetujui lain. Pemeriksaan memakai himpunan `days` yang sudah disimpan, sehingga kalender dan pemotongan H-3 mengikuti hasil pengajuan.
+
+Saat approval, pemeriksaan diulang **di dalam transaksi**. Aturan aktif harus memiliki minimal satu calon tersedia. Tanpa `replacementId`, hanya waktu pemeriksaan dicatat; calon tidak dipesan. Dengan `replacementId`, calon harus masih tersedia dan sesuai aturan sebelum snapshot penugasan disimpan. Lock unit mencegah dua keputusan bersamaan memesan orang yang sama pada tanggal beririsan.
+
+Penugasan pada pengajuan berstatus APPROVED tetap dianggap aktif selama pembatalan pending/ditolak. Ketika pembatalan disetujui dan pengajuan berubah menjadi WITHDRAWN, tugas dilepas tanpa menghapus snapshot historis. Preview dan submit cuti memblokir tanggal bertabrakan dengan tugas PGS. Tugas tidak menambah penggunaan kuota cuti. Perubahan posisi/outlet/akses serta penghapusan karyawan bertugas diblokir; master yang masih direferensikan tidak dapat dihapus.
+
+Pengujian mencakup migrasi idempotent tanpa aturan bawaan, posisi/outlet dinamis, isolasi cabang, calon sedang cuti, pengecekan ulang approval, penugasan bersamaan, pembatalan, serta alur admin → karyawan → SDM pada desktop dan ponsel. Pengujian menggunakan database in-memory terpisah.

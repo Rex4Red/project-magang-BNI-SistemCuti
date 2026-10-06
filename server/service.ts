@@ -2,6 +2,7 @@ import {createHash,randomUUID} from 'node:crypto';
 import {hash} from 'bcryptjs';
 import {z} from 'zod';
 import type {SQL,Database} from './db';
+import {assignedDuring,employeeOutlet,initializeDirectories,outlets,overlaps,replacementCheck} from './replacement';
 import {ACTIVE,DEFAULT_CALENDAR,POSITIONS,addMonths,dateOnly,evaluate,limitFor,reminderAt,validDate,type Employee,type Leave,type LeaveInput,type Policy} from '../shared/domain';
 export class AppError extends Error { constructor(public status:number,message:string,public code='INVALID',public details?:unknown){super(message);} }
 export const ensure=(ok:unknown,message:string,status=422,code='INVALID',details?:unknown)=>{if(!ok)throw new AppError(status,message,code,details);};
@@ -17,6 +18,7 @@ export const digest=(o:unknown)=>createHash('sha256').update(JSON.stringify(o)).
 export async function preview(db:SQL,actor:Employee,input:LeaveInput,now:Date) {
   const policy=await getPolicy(db,actor.unit);const all=await requests(db);const local=all.filter(r=>r.unit===actor.unit);
   const p=evaluate(input,actor,all,policy.calendar,limitFor(actor.position,input.start.slice(0,7),policy,local),dateOnly(now));
+  if(local.some(r=>assignedDuring(r,actor.id,dateOnly(now))&&overlaps(r.days,p.days)))p.errors.push({code:'PGS_DUTY',message:'Anda memiliki tugas PGS pada tanggal tersebut. Hubungi SDM sebelum mengajukan cuti.'});
   p.fingerprint=digest({input,days:p.days,calendar:policy.calendar,position:actor.position,unit:actor.unit,today:dateOnly(now)});
   if(p.effectiveStart)p.scheduledAt=reminderAt(p.effectiveStart,input.category,now);
   return p;
@@ -28,7 +30,7 @@ export async function mutate<T>(db:Database,actor:Employee,key:string,payload:un
     // All mutations serialize on the unit row. Simpler than multiple locks for the initial single-unit scale.
     await tx.query('SELECT id FROM units WHERE id=$1 FOR UPDATE',[actor.unit]);
     const current=(await tx.query('SELECT data FROM employees WHERE id=$1',[actor.id])).rows[0]?.data;
-    ensure(current?.active&&JSON.stringify(current.roles)===JSON.stringify(actor.roles)&&current.unit===actor.unit&&current.position===actor.position,'Profil berubah. Masuk kembali.',409);
+    ensure(current?.active&&JSON.stringify(current.roles)===JSON.stringify(actor.roles)&&current.unit===actor.unit&&current.position===actor.position&&employeeOutlet(current)===employeeOutlet(actor),'Profil berubah. Masuk kembali.',409);
     const old=(await tx.query('SELECT hash,result FROM operations WHERE actor_id=$1 AND key=$2',[actor.id,key])).rows[0];
     if(old){ensure(old.hash===digest(payload),'Identitas pengiriman digunakan untuk data berbeda.',409);return old.result as T;}
     const result=await fn(tx);
@@ -40,6 +42,8 @@ export async function submit(db:Database,actor:Employee,body:any,key:string,now:
   const input=inputSchema.parse(body);checkEmail(input.email);
   return mutate(db,actor,key,{action:'submit',...body},async tx=>{
     const p=await preview(tx,actor,input,now);
+    const duties=(await requests(tx,actor.unit)).filter(r=>assignedDuring(r,actor.id,dateOnly(now))&&overlaps(r.days,p.days));
+    ensure(!duties.length,'Anda memiliki tugas PGS pada tanggal tersebut. Hubungi SDM sebelum mengajukan cuti.',409);
     ensure(!p.errors.length,p.errors[0]?.message??'Tidak valid',422,p.errors[0]?.code,p);
     ensure(body.fingerprint===p.fingerprint,'Perhitungan berubah. Tinjau kembali pengajuan.',409,'PREVIEW_CHANGED',p);
     ensure(!p.adjusted||body.acceptAdjustment===true,'Setujui penyesuaian tanggal sebelum mengirim.');
@@ -47,6 +51,9 @@ export async function submit(db:Database,actor:Employee,body:any,key:string,now:
     if(body.draftId){draft=(await requests(tx,actor.unit)).find(r=>r.id===body.draftId);ensure(draft?.employeeId===actor.id&&draft.status==='DRAFT','Draft tidak ditemukan.',404);ensure(draft?.version===body.draftVersion,'Draft sudah berubah.',409);}
     const id=draft?.id??randomUUID();
     const r:Leave={...input,id,number:`CT-${dateOnly(now).replaceAll('-','')}-${id.slice(0,6).toUpperCase()}`,employeeId:actor.id,employeeName:actor.name,position:actor.position,unit:actor.unit,status:'PENDING_SDM',days:p.days,effectiveStart:p.effectiveStart,effectiveEnd:p.effectiveEnd,duration:p.duration,submittedAt:now.toISOString(),createdAt:draft?.createdAt??now.toISOString(),confirmation:'NOT_CONFIRMED',version:(draft?.version??0)+1,calendarVersion:(await getPolicy(tx,actor.unit)).calendar.version,limit:p.quota.limit,events:[{at:now.toISOString(),text:'Pengajuan dikirim ke SDM',actor:actor.name}]};
+    const location=(await outlets(tx,actor.unit)).find(o=>o.id===employeeOutlet(actor));
+    ensure(location,'Outlet karyawan tidak tersedia. Hubungi administrator.');
+    r.outletId=location!.id;r.outletName=location!.name;r.positionName=actor.positionName;
     await saveRequest(tx,r);await audit(tx,actor,'SUBMIT',id);await mail(tx,r,input.category==='REGULAR'?'REMINDER':'EMERGENCY',p.scheduledAt!);return r;
   });
 }
@@ -101,7 +108,19 @@ export async function act(db:Database,actor:Employee,id:string,action:string,bod
       if(action==='confirmation') {ensure(leave.category==='REGULAR','Konfirmasi hanya untuk cuti reguler.');ensure(['CONFIRMED','DECLINED'].includes(body.result),'Konfirmasi tidak valid.');ensure(typeof body.channel==='string'&&body.channel.trim().length>=2&&body.channel.length<=120,'Isi kanal konfirmasi.');leave.confirmation=body.result;leave.confirmationChannel=body.channel; text=body.result==='CONFIRMED'?'Karyawan mengonfirmasi jadi cuti':'Karyawan mengonfirmasi tidak jadi cuti';}
       else if(action==='decision'){
         ensure(['APPROVED','REJECTED'].includes(body.outcome),'Keputusan tidak valid.');
-        if(body.outcome==='APPROVED'){ensure(leave.effectiveStart>=dateOnly(now),'Tanggal mulai cuti sudah terlewati.');ensure(leave.category==='EMERGENCY'||leave.confirmation==='CONFIRMED','Catat konfirmasi karyawan sebelum menyetujui.');}
+        if(body.outcome==='APPROVED'){
+          ensure(leave.effectiveStart>=dateOnly(now),'Tanggal mulai cuti sudah terlewati.');ensure(leave.category==='EMERGENCY'||leave.confirmation==='CONFIRMED','Catat konfirmasi karyawan sebelum menyetujui.');
+          const check=await replacementCheck(tx,leave,await getPolicy(tx,actor.unit));
+          if(check.rule?.enabled){
+            ensure(check.candidates.some(c=>c.available),'Tidak ada PGS yang tersedia sesuai aturan admin. Persetujuan belum dapat dilakukan.',409,'NO_REPLACEMENT');
+            leave.replacementCheckedAt=now.toISOString();
+            if(body.replacementId){
+              const candidate=check.candidates.find(c=>c.id===body.replacementId&&c.available);
+              ensure(candidate,'Calon PGS sudah tidak tersedia atau tidak memenuhi aturan. Periksa kembali.',409,'REPLACEMENT_UNAVAILABLE');
+              leave.replacement={employeeId:candidate!.id,employeeName:candidate!.name,position:candidate!.position,outletId:candidate!.outletId,outletName:candidate!.outletName,assignedAt:now.toISOString(),assignedBy:actor.name};
+            }
+          }else ensure(!body.replacementId,'Aturan PGS belum aktif untuk posisi ini.');
+        }
         else ensure(typeof body.reason==='string'&&body.reason.trim().length>=5&&body.reason.length<=2000,'Alasan penolakan minimal 5 karakter.');
         leave.status=body.outcome;leave.decisionReason=typeof body.reason==='string'?body.reason.slice(0,2000):'';text=body.outcome==='APPROVED'?'Pengajuan disetujui SDM':'Pengajuan ditolak SDM';
       }else throw new AppError(404,'Aksi tidak ditemukan.');
@@ -133,7 +152,7 @@ export async function seed(db:Database,demo:boolean,now=new Date()) {
         await db.query('UPDATE units SET policy=$1 WHERE id=$2', [pol, u.id]);
       }
     }
-    return;
+    await initializeDirectories(db);return;
   }
   const policy:Policy={calendar:DEFAULT_CALENDAR,quotas:{}};
   await db.transaction(async tx=>{
@@ -155,4 +174,5 @@ export async function seed(db:Database,demo:boolean,now=new Date()) {
       }
     }
   });
+  await initializeDirectories(db);
 }

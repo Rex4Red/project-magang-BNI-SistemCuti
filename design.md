@@ -1,7 +1,9 @@
 # Desain Produk — Sistem Cuti BNI
 
-Versi: 0.2 — kuota orang dan H-3 hari kerja  
-Tanggal: 29 September 2026  
+Versi: 0.3 — posisi, outlet, dan pengganti sementara (PGS)
+
+Tanggal: 5 Oktober 2026
+
 Acuan: [PRD](PRD.md) · [Arsitektur](architecture.md)
 
 ## 1. Prinsip desain
@@ -24,7 +26,7 @@ Kuota orang per bulan, durasi hari kerja per permohonan, dan jumlah orang yang c
 |---|---|
 | Karyawan | Beranda · Ajukan Cuti · Pengajuan Saya · Profil |
 | SDM | Ringkasan · Pengajuan · Kalender Cuti · Laporan |
-| Administrator | Karyawan · Posisi & Kuota · Kalender Kerja · Pengguna & Akses · Notifikasi · Audit |
+| Administrator | Karyawan · Posisi · Outlet · Aturan PGS · Posisi & Kuota · Kalender Kerja · Notifikasi · Audit |
 
 Pengguna dengan beberapa peran dapat mengganti area kerja. Sidebar hanya menampilkan modul yang diizinkan, namun server tetap memeriksa akses setiap permintaan. Pada ponsel, sidebar berubah menjadi menu; tombol utama tetap mudah dijangkau tanpa menutup isi form.
 
@@ -255,3 +257,15 @@ Gunakan font sistem yang jelas, body minimal 16 px, jarak dasar 8 px, dan sasara
 Uji dengan karyawan dan SDM menggunakan AC pada PRD. Prioritaskan apakah pengguna memahami perbedaan tanggal diminta/efektif, H-3 hari kerja/hari kalender, kuota orang bulanan/maksimal 5 hari kerja, serta status pending/approved. Pastikan keputusan SDM dan penjelasan error bisa diselesaikan di ponsel tanpa membuka tabel lebar.
 
 Dokumen ini mendeskripsikan rancangan interaksi; belum merupakan implementasi UI atau hasil uji kegunaan.
+
+## 12. Posisi, outlet, dan PGS
+
+Administrasi menampilkan tiga tab tambahan: **Posisi**, **Outlet**, dan **Aturan PGS**. Tab Posisi berisi kode, nama, kuota awal, dan tombol hapus. Tab Outlet berisi nama, jumlah karyawan, edit nama, serta hapus. Penghapusan menggunakan popup konfirmasi; bila data masih digunakan, pesan penolakan muncul di popup tersebut. Direktori karyawan menampilkan kolom dan pilihan outlet.
+
+Tab Aturan PGS menampilkan seluruh posisi beserta posisi pengganti, sumber outlet, dan status **Belum diatur / Aktif / Nonaktif**. Klik **Atur** membuka popup dengan pilihan posisi pengganti, izin outlet sama, dan sumber outlet lain: tidak boleh, semua outlet dalam cabang, atau outlet tertentu. Tidak ada aturan awal yang ditambahkan otomatis.
+
+Detail pengajuan SDM memiliki bagian **Pengganti sementara (PGS)** yang menampilkan outlet pemohon, sumber posisi, jumlah calon tersedia, serta nama dan alasan ketersediaan calon. Pemeriksaan diperbarui setiap lima detik saat halaman terlihat dan tersedia tombol **Periksa ulang**. Jika aturan aktif dan tidak ada calon tersedia, tombol persetujuan dinonaktifkan. Gangguan pemeriksaan juga memblokir approval sampai data berhasil dimuat kembali.
+
+Pilihan **Tetapkan PGS (opsional)** menggunakan nilai awal **Hanya periksa ketersediaan**. SDM tidak harus memilih seseorang. Memilih nama mencatat tugas PGS; jika calon itu kemudian tidak tersedia, pilihan ditandai dan approval diblokir sampai SDM memilih lagi. Sistem tidak mengganti penugasan menjadi pemeriksaan saja secara diam-diam. Detail cuti yang memiliki penugasan menampilkan nama, posisi, dan outlet PGS.
+
+Posisi tanpa aturan/nonaktif menampilkan penjelasan singkat dan tetap menggunakan alur approval yang ada. Popup keputusan tetap memuat informasi pemeriksaan atau nama PGS yang dipilih. Pada ponsel, pilihan posisi tersusun dua kolom, daftar calon ditumpuk vertikal, dan kontrol filter boleh berpindah baris agar tidak melebar keluar layar.

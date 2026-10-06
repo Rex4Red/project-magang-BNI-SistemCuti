@@ -6,12 +6,19 @@ export const POSITIONS = [
 ] as const;
 export type Role = 'EMPLOYEE'|'SDM'|'ADMIN';
 export type Status = 'DRAFT'|'PENDING_SDM'|'APPROVED'|'REJECTED'|'WITHDRAWN';
-export interface Employee { id:string; name:string; email:string; phone:string; position:string; unit:string; roles:Role[]; active:boolean; deletedAt?:string; }
+export type PositionDefinition = readonly [string,string,number];
+export interface Employee { id:string; name:string; email:string; phone:string; position:string; unit:string; roles:Role[]; active:boolean; deletedAt?:string; outletId?:string; positionName?:string; }
+export interface Outlet { id:string; unit:string; name:string; deletedAt?:string; }
+export interface ReplacementRule { position:string; enabled:boolean; sourcePositions:string[]; sameOutlet:boolean; otherOutlets:'NONE'|'ALL'|'SELECTED'; outletIds:string[]; }
+export interface ReplacementAssignment { employeeId:string; employeeName:string; position:string; outletId:string; outletName:string; assignedAt:string; assignedBy:string; }
+export interface ReplacementCandidate { id:string; name:string; position:string; outletId:string; outletName:string; available:boolean; reason:string; }
+export interface ReplacementCheck { rule:ReplacementRule|null; outletId:string; outletName:string; candidates:ReplacementCandidate[]; }
 export interface Calendar { version:number; weekdays:number[]; exceptions:Record<string, {working:boolean; label:string}>; }
-export interface Policy { calendar:Calendar; quotas:Record<string,Record<string,number>>; }
+export interface Policy { calendar:Calendar; quotas:Record<string,Record<string,number>>; replacementRules?:Record<string,ReplacementRule>; positions?:PositionDefinition[]; }
+export const positionsFor=(policy:Policy):readonly PositionDefinition[]=>policy.positions??POSITIONS;
 export interface LeaveInput { category:'REGULAR'|'EMERGENCY'; subtype:string; reason:string; start:string; end:string; email:string; phone:string; }
 export interface LeaveCancellation { reason:string; requestedAt:string; status:'PENDING'|'APPROVED'|'REJECTED'; reviewedAt?:string; reviewedBy?:string; decisionReason?:string; }
-export interface Leave extends LeaveInput { id:string; number:string; employeeId:string; employeeName:string; position:string; unit:string; status:Status; days:string[]; effectiveStart:string; effectiveEnd:string; duration:number; submittedAt:string; createdAt:string; confirmation:'NOT_CONFIRMED'|'CONFIRMED'|'DECLINED'; confirmationChannel?:string; decisionReason?:string; version:number; calendarVersion:number; limit:number; events:{at:string; text:string; actor:string}[]; cancellation?:LeaveCancellation; }
+export interface Leave extends LeaveInput { id:string; number:string; employeeId:string; employeeName:string; position:string; unit:string; status:Status; days:string[]; effectiveStart:string; effectiveEnd:string; duration:number; submittedAt:string; createdAt:string; confirmation:'NOT_CONFIRMED'|'CONFIRMED'|'DECLINED'; confirmationChannel?:string; decisionReason?:string; version:number; calendarVersion:number; limit:number; events:{at:string; text:string; actor:string}[]; cancellation?:LeaveCancellation; outletId?:string; outletName?:string; positionName?:string; replacement?:ReplacementAssignment; replacementCheckedAt?:string; }
 export interface Quota { position:string; label:string; limit:number; used:number; approved:number; pending:number; available:number; alreadyCounted:boolean; }
 export interface Preview { days:string[]; effectiveStart:string; effectiveEnd:string; duration:number; minimum:string; blocked:string[]; adjusted:boolean; errors:{code:string; message:string}[]; quota:Quota; fingerprint?:string; scheduledAt?:string; }
 export const ACTIVE:Status[] = ['PENDING_SDM','APPROVED'];
@@ -82,7 +89,7 @@ export function limitFor(position:string,month:string,policy:Policy,requests:Lea
   const frozen=requests.find(r=>r.position===position && r.effectiveStart.slice(0,7)===month && r.status!=='DRAFT');
   if(frozen) return frozen.limit;
   const effective=Object.keys(policy.quotas).filter(m=>m<=month).sort().at(-1);
-  return (effective ? policy.quotas[effective]?.[position] : undefined) ?? POSITIONS.find(p=>p[0]===position)?.[2] ?? 2;
+  return (effective ? policy.quotas[effective]?.[position] : undefined) ?? positionsFor(policy).find(p=>p[0]===position)?.[2] ?? 2;
 }
 export function evaluate(input:LeaveInput,employee:Employee,requests:Leave[],calendar:Calendar,limit:number,today:string):Preview {
   const errors:Preview['errors']=[];

@@ -136,7 +136,7 @@ export async function buildXlsxReport(
   // Row 2
   ws.getCell(`B${currentRow}`).value = 'Petugas SDM';
   ws.getCell(`B${currentRow}`).font = { name: fontSegoe, size: 9.5, bold: true, color: { argb: 'FF475569' } };
-  ws.getCell(`C${currentRow}`).value = `: ${actor.name} (${positionLabel(actor.position)})`;
+  ws.getCell(`C${currentRow}`).value = `: ${actor.name} (${(actor.positionName??positionLabel(actor.position))})`;
   ws.getCell(`C${currentRow}`).font = { name: fontSegoe, size: 9.5, color: { argb: 'FF0F172A' } };
 
   ws.getCell(`G${currentRow}`).value = 'Waktu Ekspor';
@@ -372,7 +372,7 @@ export async function buildXlsxReport(
         idx + 1,
         sanitizeCell(r.number),
         sanitizeCell(r.employeeName),
-        sanitizeCell(positionLabel(r.position)),
+        sanitizeCell((r.positionName??positionLabel(r.position))),
         sanitizeCell(categoryText),
         sanitizeCell(r.subtype || '-'),
         sanitizeCell(r.effectiveStart || r.start),
@@ -467,7 +467,7 @@ export async function buildXlsxReport(
   ws.getCell(`I${currentRow}`).font = { name: fontSegoe, size: 9.5, bold: true };
 
   currentRow++;
-  ws.getCell(`B${currentRow}`).value = positionLabel(actor.position);
+  ws.getCell(`B${currentRow}`).value = (actor.positionName??positionLabel(actor.position));
   ws.getCell(`B${currentRow}`).font = { name: fontSegoe, size: 8.5, color: { argb: 'FF475569' } };
   ws.getCell(`I${currentRow}`).value = actor.unit;
   ws.getCell(`I${currentRow}`).font = { name: fontSegoe, size: 8.5, color: { argb: 'FF475569' } };
@@ -524,7 +524,7 @@ export function buildExcelReport(rows: Leave[], actor: Employee, month: string, 
   <p>Unit: ${escapeHtml(actor.unit)} | Periode: ${escapeHtml(formatMonthLabel(month))} | SDM: ${escapeHtml(actor.name)}</p>
   <table border="1">
     <tr><th>No</th><th>Nomor</th><th>Nama</th><th>Posisi</th><th>Kategori</th><th>Mulai</th><th>Akhir</th><th>Hari</th><th>Status</th></tr>
-    ${rows.map((r, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(r.number)}</td><td>${escapeHtml(r.employeeName)}</td><td>${escapeHtml(positionLabel(r.position))}</td><td>${escapeHtml(r.category)}</td><td>${r.effectiveStart}</td><td>${r.effectiveEnd}</td><td>${r.duration}</td><td>${escapeHtml(statusLabel[r.status] || r.status)}</td></tr>`).join('')}
+    ${rows.map((r, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(r.number)}</td><td>${escapeHtml(r.employeeName)}</td><td>${escapeHtml((r.positionName??positionLabel(r.position)))}</td><td>${escapeHtml(r.category)}</td><td>${r.effectiveStart}</td><td>${r.effectiveEnd}</td><td>${r.duration}</td><td>${escapeHtml(statusLabel[r.status] || r.status)}</td></tr>`).join('')}
   </table>
 </body></html>`;
 }

@@ -32,6 +32,7 @@ Akun tersebut hanya untuk demonstrasi. Seed hanya berjalan pada database kosong.
 - Transaksi database serta idempotensi submit untuk mencegah perebutan kuota dan pengiriman ganda.
 - Ekspor Excel (.xlsx) SDM dengan tabel-tabel terstruktur rapi (ringkasan & rincian data) tanpa alasan pribadi dan pencatatan audit.
 - Admin karyawan/peran, kuota periode mendatang, pengecualian kalender, antrean notifikasi, dan retry email gagal.
+- Admin master posisi/outlet dan aturan PGS; SDM memeriksa ketersediaan pengganti lintas outlet sebelum approval, dengan penugasan opsional.
 - Worker email terjadwal: reguler satu bulan sebelum tanggal mulai efektif; darurat dan keputusan segera diantrekan.
 - Font disajikan dari aset lokal, tanpa permintaan font pihak ketiga.
 
@@ -46,6 +47,20 @@ Akun tersebut hanya untuk demonstrasi. Seed hanya berjalan pada database kosong.
 Kuota CS BINA adalah 2 **orang**, sehingga A cuti tanggal 1 dan B cuti tanggal 20 menghabiskan kuota bulan tersebut. Satu permohonan 5 hari kerja tetap memakai satu slot orang. Hari kerja default Senin–Jumat; kalender hari libur organisasi harus diisi admin, bukan diasumsikan sudah tersedia.
 
 ## Konfigurasi email dan database
+
+### Mengatur pengganti sementara (PGS)
+
+1. Buka **Administrasi → Posisi** untuk menambah atau menghapus posisi. Tentukan kuota awal dalam orang per bulan.
+2. Buka **Outlet** untuk menambah, mengganti nama, atau menghapus outlet. Data lama ditempatkan pada satu outlet awal dalam cabang.
+3. Buka **Karyawan → Edit** untuk menentukan posisi dan outlet setiap karyawan.
+4. Buka **Aturan PGS → Atur** pada posisi cuti. Pilih posisi pengganti dan sumber outlet, lalu simpan. Semua posisi awalnya **belum diatur**, termasuk BM.
+5. SDM membuka detail pengajuan dan melihat calon yang tersedia selama seluruh tanggal efektif. Aturan aktif mengharuskan minimal satu calon tersedia; memilih nama PGS tidak wajib. Jika aturan belum diatur/nonaktif, alur approval sebelumnya tetap berlaku.
+
+Calon dengan cuti pending/disetujui atau tugas PGS pada tanggal beririsan tidak tersedia. Pilihan **Tetapkan PGS (opsional)** mencatat tugas dan memesan tanggal calon; pilihan **Hanya periksa ketersediaan** hanya memeriksa keberadaan calon, tanpa membuat penugasan. Backend memeriksa ulang saat approval. Tugas dilepas jika pembatalan cuti disetujui, dan tetap tersimpan sebagai riwayat. Tugas PGS tidak mengurangi kuota cuti.
+
+Outlet berada di dalam unit/cabang yang sama. Kuota bulanan dan kewenangan SDM tetap per cabang. Master yang masih dipakai tidak dapat dihapus, dan penempatan/akses karyawan dengan cuti atau tugas PGS aktif tidak dapat diubah.
+
+Tabel outlet dan pengisian outlet untuk data lama berjalan otomatis saat startup. Setelah memperbarui kode, restart proses API; untuk demo publik, hentikan sesi lama lalu jalankan kembali `node scripts/public-demo.mjs` agar backend dan build terbaru digunakan.
 
 ### Demo publik sementara
 
@@ -78,7 +93,7 @@ npm.cmd run test:e2e
 
 Pengujian browser menjalankan server dan database in-memory terpisah pada port 5174/3011, tidak mengubah data demo utama. Screenshot desktop dan ponsel berada dalam `artifacts/`. Pengujian unit/API mencakup konkurensi, idempotensi, kuota unik, akhir bulan, kebocoran akses, keputusan SDM, ekspor, dan capture email.
 
-Hasil verifikasi implementasi awal: 47 tes unit/API dan 3 tes browser lulus, TypeScript dan build lulus. Ini bukan pengganti UAT SDM atau validasi infrastruktur produksi.
+Hasil verifikasi 5 Oktober 2026: 66 tes unit/API dan 5 tes browser lulus, termasuk pemeriksaan PGS lintas outlet, reservasi bersamaan, dan pembatalan. TypeScript dan build lulus. Ini bukan pengganti UAT SDM atau validasi infrastruktur produksi.
 
 Untuk mencoba build lokal, jalankan `npm.cmd run build`, atur `APP_ORIGIN=http://127.0.0.1:3001`, lalu `npm.cmd start` dan buka port 3001. Jangan jalankan dua proses API yang membuka direktori PGlite yang sama.
 
