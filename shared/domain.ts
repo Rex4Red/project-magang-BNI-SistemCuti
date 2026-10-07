@@ -11,7 +11,7 @@ export interface Employee { id:string; name:string; email:string; phone:string; 
 export interface Outlet { id:string; unit:string; name:string; deletedAt?:string; }
 export interface ReplacementRule { position:string; enabled:boolean; sourcePositions:string[]; sameOutlet:boolean; otherOutlets:'NONE'|'ALL'|'SELECTED'; outletIds:string[]; }
 export interface ReplacementAssignment { employeeId:string; employeeName:string; position:string; outletId:string; outletName:string; assignedAt:string; assignedBy:string; }
-export interface ReplacementCandidate { id:string; name:string; position:string; outletId:string; outletName:string; available:boolean; reason:string; }
+export interface ReplacementCandidate { id:string; name:string; position:string; positionName?:string; outletId:string; outletName:string; available:boolean; reason:string; }
 export interface ReplacementCheck { rule:ReplacementRule|null; outletId:string; outletName:string; candidates:ReplacementCandidate[]; }
 export interface Calendar { version:number; weekdays:number[]; exceptions:Record<string, {working:boolean; label:string}>; }
 export interface Policy { calendar:Calendar; quotas:Record<string,Record<string,number>>; replacementRules?:Record<string,ReplacementRule>; positions?:PositionDefinition[]; }

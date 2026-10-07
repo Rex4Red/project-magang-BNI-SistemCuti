@@ -46,6 +46,37 @@ export function createApp(db:Database,options:{demo:boolean;now?:()=>Date;origin
     const isHttps = production || options.origin?.startsWith('https://') === true || req.get('x-forwarded-proto') === 'https' || req.get('origin')?.startsWith('https://') === true;
     res.cookie('cuti_session', token, { httpOnly: true, sameSite: 'lax', secure: isHttps, maxAge: 8 * 3600000, path: '/' }).json(row.data);
   });
+  app.get('/api/verify-certificate', rateLimit({ windowMs: 15 * 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false }), async (req, res) => {
+    const num = (req.query.num as string | undefined)?.trim();
+    const id = (req.query.id as string | undefined)?.trim();
+    if (!num && !id) return res.status(400).json({ valid: false, message: 'Nomor atau ID dokumen diperlukan.' });
+    const all = await requests(db);
+    const found = all.find(r => (id && r.id === id) || (num && r.number.toLowerCase() === num.toLowerCase()));
+    if (!found) {
+      return res.status(404).json({ valid: false, message: 'Surat keterangan cuti tidak ditemukan dalam sistem perbankan BNI.' });
+    }
+    const unitRow = (await db.query('SELECT name FROM units WHERE id=$1', [found.unit])).rows[0];
+    res.json({
+      valid: true,
+      id: found.id,
+      number: found.number,
+      employeeName: found.employeeName,
+      unitName: unitRow?.name ?? 'PT Bank Negara Indonesia (Persero) Tbk',
+      position: found.positionName ?? found.position,
+      category: found.category === 'REGULAR' ? 'Cuti Reguler' : 'Cuti Darurat',
+      subtype: found.subtype,
+      status: found.status,
+      effectiveStart: found.effectiveStart,
+      effectiveEnd: found.effectiveEnd,
+      duration: found.duration,
+      replacement: found.replacement ? {
+        employeeName: found.replacement.employeeName,
+        position: found.replacement.position,
+        outletName: found.replacement.outletName,
+      } : undefined,
+      verifiedAt: now().toISOString()
+    });
+  });
   app.use('/api',async(req,_res,next)=>{try{const token=req.cookies.cuti_session;ensure(typeof token==='string','Silakan masuk kembali.',401);const row=(await db.query('SELECT e.data FROM sessions s JOIN employees e ON e.id=s.employee_id WHERE s.token=$1 AND s.expires_at>$2',[digest(token),now().toISOString()])).rows[0];ensure(row?.data.active,'Sesi berakhir. Silakan masuk kembali.',401);req.actor=row.data;next();}catch(e){next(e);}});
   app.get('/api/me',(req,res)=>res.json(req.actor));
   app.post('/api/logout',async(req,res)=>{await db.query('DELETE FROM sessions WHERE token=$1',[digest(req.cookies.cuti_session)]);res.clearCookie('cuti_session').json({ok:true});});
@@ -80,7 +111,12 @@ export function createApp(db:Database,options:{demo:boolean;now?:()=>Date;origin
   app.post('/api/admin/employee',async(req,res)=>{
     const body=z.object({id:z.string().optional(),name:z.string().trim().min(2).max(100),email:z.email().max(200),phone:z.string().min(8).max(20),position:z.string().max(40),outletId:z.string().optional(),roles:z.array(z.enum(['EMPLOYEE','SDM','ADMIN'])).min(1),active:z.boolean(),password:z.string().max(200).regex(PASSWORD_PATTERN,PASSWORD_HINT).optional()}).parse(req.body);
     res.json(await mutate(db,req.actor,req.get('idempotency-key')??'',{action:'employee',...body},async tx=>{const existing=body.id?(await employees(tx)).find(e=>e.id===body.id&&e.unit===req.actor.unit):undefined;if(body.id)ensure(existing,'Pegawai tidak ditemukan.',404);if(!body.id)ensure(body.password,'Kata sandi awal wajib diisi.');if(body.id===req.actor.id)ensure(body.active&&body.roles.includes('ADMIN'),'Anda tidak dapat menonaktifkan akses admin sendiri.');
-      const position=positionsFor(await getPolicy(tx,req.actor.unit)).find(p=>p[0]===body.position);ensure(position,'Posisi tidak tersedia.');
+      const isSdm=body.roles.includes('SDM');
+      if(isSdm) body.position='SDM';
+      ensure(isSdm||body.position!=='SDM','Posisi SDM hanya untuk peran SDM.',422);
+      const policyPositions=positionsFor(await getPolicy(tx,req.actor.unit));
+      const position=body.position==='SDM'?(policyPositions.find(p=>p[0]==='SDM')??['SDM','SDM',0] as const):policyPositions.find(p=>p[0]===body.position);
+      ensure(position,'Posisi tidak tersedia.');
       const outletId=body.outletId??(existing?employeeOutlet(existing):employeeOutlet(req.actor));ensure((await outlets(tx,req.actor.unit)).some(o=>o.id===outletId),'Outlet tidak tersedia dalam cabang ini.');
       if(existing&&(existing.position!==body.position||employeeOutlet(existing)!==outletId||!body.active||!body.roles.includes('EMPLOYEE'))){const all=await requests(tx,req.actor.unit);ensure(!all.some(r=>r.employeeId===existing.id&&ACTIVE.includes(r.status)&&r.effectiveEnd>=dateOnly(now())),'Selesaikan pengajuan aktif sebelum mengubah posisi/outlet/akses.');ensure(!all.some(r=>assignedDuring(r,existing.id,dateOnly(now()))),'Karyawan masih memiliki tugas PGS aktif.',409);}
       const {password,id,...fields}=body;const e:Employee={...fields,outletId,positionName:position![1],email:body.email.toLowerCase(),id:existing?.id??randomUUID(),unit:req.actor.unit};const pw=password?await hash(password,12):(await tx.query('SELECT password_hash FROM employees WHERE id=$1',[e.id])).rows[0].password_hash;

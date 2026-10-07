@@ -26,6 +26,16 @@ it('creates and resets an employee password with six letters and digits',async()
   await admin.post('/api/admin/employee').set('X-Cuti-Client','web').set('Idempotency-Key',randomUUID()).send({...body,id:created.body.id}).expect(200);
   await employee.post('/api/login').set('X-Cuti-Client','web').send({email:body.email,password:'cuti12'}).expect(200);
 });
+it('restricts SDM role position strictly to SDM and rejects SDM position for non-SDM',async()=>{
+  const admin=await login('admin');
+  const nonSdmBody={name:'Non SDM Test',email:'nonsdm-test@demo.bni.local',phone:'081234567899',position:'SDM',roles:['EMPLOYEE'],active:true,password:'abc123'};
+  await admin.post('/api/admin/employee').set('X-Cuti-Client','web').set('Idempotency-Key',randomUUID()).send(nonSdmBody).expect(422);
+
+  const sdmBody={name:'SDM User Test',email:'sdmuser-test@demo.bni.local',phone:'081234567899',position:'CS_BINA',roles:['SDM'],active:true,password:'abc123'};
+  const res=await admin.post('/api/admin/employee').set('X-Cuti-Client','web').set('Idempotency-Key',randomUUID()).send(sdmBody).expect(200);
+  expect(res.body.position).toBe('SDM');
+  expect(res.body.positionName).toBe('SDM');
+});
 it('persists five days using one person slot and atomic mail/audit',async()=>{const r=await create();expect(r.duration).toBe(5);expect((await requests(db)).length).toBe(1);expect((await db.query('SELECT * FROM mail_jobs')).rows.length).toBe(1);expect((await db.query('SELECT * FROM audit')).rows.length).toBe(1);const p=await preview(db,userB,{...input,start:'2026-10-20',end:'2026-10-20'},clock);expect(p.quota.available).toBe(1);});
 it('deletes employees within the unit, revokes access and preserves leave history',async()=>{
   const admin=await login('admin');const employeeAgent=await login();

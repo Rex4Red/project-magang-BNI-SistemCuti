@@ -1,11 +1,14 @@
 import {useEffect,useRef,useState,type FormEvent,type ReactNode} from 'react';
-import {ArrowDownToLine,ArrowRight,ArrowUpRight,Bell,CalendarDays,Check,CheckCheck,ChevronLeft,ChevronRight,Clock3,FileText,Home,Info,LayoutGrid,LogOut,Menu,Plus,Search,Settings2,ShieldCheck,Users,X,Mail,Send,BriefcaseBusiness,CheckCircle2,AlertCircle,SlidersHorizontal,Leaf,Save,Phone,MessageCircle,RotateCcw,XCircle,UserCheck} from 'lucide-react';
+import {ArrowDownToLine,ArrowRight,ArrowUpRight,Bell,CalendarDays,Check,CheckCheck,ChevronLeft,ChevronRight,Clock3,FileText,Home,Info,LayoutGrid,LogOut,Menu,Plus,Search,Settings2,ShieldCheck,Users,X,Mail,Send,BriefcaseBusiness,CheckCircle2,AlertCircle,SlidersHorizontal,Leaf,Save,Phone,MessageCircle,RotateCcw,XCircle,UserCheck,Printer,BarChart3} from 'lucide-react';
 import {ACTIVE,PASSWORD_PATTERN,PASSWORD_HINT,POSITIONS,addMonths,dateOnly,isWorking,monthDays,positionLabel,statusLabel,calculateMaxEndDate,getValidEndDates,blockedDays,type Employee,type Leave,type LeaveInput,type Preview,type Quota} from '../shared/domain';
 import {api,action,ApiError} from './api';
 import {DirectoryContext,useDirectory} from './DirectoryContext';
 import {ReplacementAdmin} from './ReplacementAdmin';
 import {ReplacementPanel} from './ReplacementPanel';
 import {Modal} from './Modal';
+import {LeaveCertificateModal} from './LeaveCertificateModal';
+import {SdmAnalytics} from './SdmAnalytics';
+import {VerifyCertificate} from './VerifyCertificate';
 import type {ReplacementCheck} from '../shared/domain';
 const fmt=(d:string,full=false)=>d?new Intl.DateTimeFormat('id-ID',{day:'numeric',month:full?'long':'short',...(full?{year:'numeric'}:{})}).format(new Date(d+'T00:00:00')):'—';
 const monthLabel=(m:string)=>new Intl.DateTimeFormat('id-ID',{month:'long',year:'numeric'}).format(new Date(m+'-01T00:00:00'));
@@ -39,6 +42,7 @@ function getInitialMonth():string{
 }
 export default function App(){
   const [config,setConfig]=useState<any>(null);const [user,setUser]=useState<Employee|null>(null);const [boot,setBoot]=useState(true);const [page,setPage]=useState<Page>(getInitialPage);
+  const [isVerify,setIsVerify]=useState(()=>window.location.hash.startsWith('#verify')||new URLSearchParams(window.location.search).has('verify'));
   const [requestMonth,setRequestMonth]=useState('');const [month,setMonth]=useState(getInitialMonth);const [data,setData]=useState<any>(null);const [refresh,setRefresh]=useState(0);const [error,setError]=useState('');const [toast,setToast]=useState('');const [selected,setSelected]=useState<Leave|null>(null);const [draft,setDraft]=useState<Leave|null>(null);const [menu,setMenu]=useState(false);const [loading,setLoading]=useState(false);  const sdm=user?.roles.includes('SDM');const admin=user?.roles.includes('ADMIN');
   const canViewRequests=Boolean(sdm||(!admin&&user?.roles.includes('EMPLOYEE')));
   useEffect(()=>{Promise.all([api('/config').then(setConfig),api<Employee>('/me').then(setUser).catch(()=>{})]).finally(()=>setBoot(false));},[]);
@@ -60,7 +64,13 @@ export default function App(){
   useEffect(()=>{if(month){try{sessionStorage.setItem('bni_cuti_month',month);}catch{}}},[month]);
   useEffect(()=>{
     const onHashChange=()=>{
-      const hash=window.location.hash.replace(/^#\/?/,'').split('?')[0] as Page;
+      const hashStr=window.location.hash;
+      if(hashStr.startsWith('#verify')){
+        setIsVerify(true);
+        return;
+      }
+      setIsVerify(false);
+      const hash=hashStr.replace(/^#\/?/,'').split('?')[0] as Page;
       if(VALID_PAGES.includes(hash)){
         if(hash==='requests'&&user&&!canViewRequests){
           setPage('dashboard');
@@ -97,6 +107,7 @@ export default function App(){
   };
   const newLeave=()=>{setDraft(null);nav('form');};
   if(boot)return <div className="boot"><span className="bni-logo"><img src="/images/bni-logo.png" alt="BNI" /></span><p>Menyiapkan ruang kerja Anda…</p></div>;
+  if(isVerify)return <VerifyCertificate onBack={()=>{setIsVerify(false);window.location.hash='';}}/>;
   if(!user)return <Login config={config} onLogin={u=>{
     setData(null);
     setSelected(null);
@@ -143,7 +154,7 @@ export default function App(){
       </main>
     </div>
     {toast&&<div className="toast" role="status"><CheckCircle2 size={19}/>{toast}</div>}
-    {selected&&<Detail leave={selected} user={user} today={data?.today??dateOnly()} onClose={()=>setSelected(null)} onCopy={()=>{setDraft({...selected,id:'',status:'DRAFT',version:0});setSelected(null);nav('form');}} onUpdate={r=>{setSelected(r);reload();setToast('Pengajuan berhasil diperbarui.');}}/>}
+    {selected&&<Detail leave={selected} user={user} today={data?.today??dateOnly()} unitName={data?.unitName??'Kantor Cabang'} onClose={()=>setSelected(null)} onCopy={()=>{setDraft({...selected,id:'',status:'DRAFT',version:0});setSelected(null);nav('form');}} onUpdate={r=>{setSelected(r);reload();setToast('Pengajuan berhasil diperbarui.');}}/>}
   </div></DirectoryContext.Provider>;
 }
 function Login({config,onLogin}:{config:any;onLogin:(u:Employee)=>void}){
@@ -152,8 +163,20 @@ function Login({config,onLogin}:{config:any;onLogin:(u:Employee)=>void}){
   return <div className="login"><div className="login-main"><div className="login-box"><span className="bni-logo"><img src="/images/bni-logo.png" alt="BNI" /></span><h2>Ruang Cuti</h2><form onSubmit={login}><Field label="Email karyawan"><input type="email" autoComplete="username" placeholder="nama@perusahaan.co.id" value={email} onChange={e=>setEmail(e.target.value)} required/></Field><Field label="Kata sandi"><input type="password" autoComplete="current-password" placeholder="Masukkan kata sandi" value={password} onChange={e=>setPassword(e.target.value)} required/></Field>{error&&<div className="alert danger" role="alert">{error}</div>}<button className="button primary full" disabled={busy}>{busy?'Memeriksa akun…':'Masuk'}<ArrowRight size={18}/></button></form>{config?.demo&&<div className="demo-accounts"><span>AKUN DEMO</span><div>{[['SDM','sdm'],['Karyawan','karyawan'],['Admin','admin']].map(([label,account])=><button key={account} onClick={()=>{setEmail(account+'@demo.bni.local');setPassword('BniCuti!2026');setError('');}}>{label}<ArrowUpRight size={13}/></button>)}</div><small>Data contoh untuk uji coba.</small></div>}</div></div></div>;
 }
 function Dashboard({data,month,sdm,onSelect,onRequests,onCalendar,admin,onAdmin}:any){
+  const [sdmTab,setSdmTab]=useState<'overview'|'analytics'>('overview');
   const current:Leave[]=data.requests.filter((r:Leave)=>r.effectiveStart.startsWith(month)&&r.status!=='DRAFT');const waiting=current.filter(r=>r.status==='PENDING_SDM');const approved=current.filter(r=>r.status==='APPROVED');const quotas:Quota[]=data.quotas;
   return <>
+    {sdm&&<div className="sdm-dashboard-tabs">
+      <button type="button" className={'sdm-tab-btn '+(sdmTab==='overview'?'active':'')} onClick={()=>setSdmTab('overview')}>
+        <LayoutGrid size={15}/>Ikhtisar Operasional
+      </button>
+      <button type="button" className={'sdm-tab-btn '+(sdmTab==='analytics'?'active':'')} onClick={()=>setSdmTab('analytics')}>
+        <BarChart3 size={15}/>Analitik & Tren SDM
+      </button>
+    </div>}
+    {sdm&&sdmTab==='analytics'?(
+      <SdmAnalytics data={data} month={month} onSelect={onSelect}/>
+    ):(<>
     <div className="stats-grid">{[
       ...(admin&&!sdm?[
         {label:'Total posisi',value:quotas.length,unit:'posisi'},
@@ -198,6 +221,7 @@ function Dashboard({data,month,sdm,onSelect,onRequests,onCalendar,admin,onAdmin}
       <section className="panel quota-panel"><div className="panel-heading"><div><h2>Kuota per posisi</h2><p>{monthLabel(month)} · dalam orang</p></div><Users size={19} className="muted"/></div><div className="quota-list">{quotas.slice(0,sdm?6:14).map(q=><div className="quota-row" key={q.position}><div><strong>{q.label}</strong><span><b>{q.used}</b> / {q.limit} <small>orang</small></span></div><div className="progress-track"><span style={{width:(q.limit?100*q.approved/q.limit:0)+'%'}}/><i style={{width:(q.limit?100*q.pending/q.limit:0)+'%'}}/></div></div>)}</div><div className="legend"><span><i className="teal-dot"/>Disetujui</span><span><i className="orange-dot"/>Menunggu</span><span><i className="gray-dot"/>Tersedia</span></div><button className="quota-link" onClick={onCalendar}>Lihat kalender<ArrowRight size={16}/></button></section>
     </div>
 
+    </>)}
   </>;
 }
 function RequestTable({requests,onSelect,compact=false,onDraft}:{requests:Leave[];onSelect:(r:Leave)=>void;compact?:boolean;onDraft?:(r:Leave)=>void}){const {positionLabel}=useDirectory();return requests.length?<div className="table-scroll"><table><thead><tr><th>Karyawan</th><th>Jadwal cuti</th>{!compact&&<th>Jenis</th>}<th>Status</th><th aria-label="Aksi"/></tr></thead><tbody>{requests.map((r,i)=><tr key={r.id}><td><div className="person"><span className="avatar neutral">{initials(r.employeeName)}</span><div><strong>{r.employeeName}</strong><small>{(r.positionName??positionLabel(r.position))}</small></div></div></td><td><span className="date-range">{fmt(r.effectiveStart||r.start)}{r.effectiveEnd!==r.effectiveStart?' – '+fmt(r.effectiveEnd||r.end):''}</span><small>{r.duration} hari kerja</small></td>{!compact&&<td><span className={'category '+r.category.toLowerCase()}>{r.category==='REGULAR'?'Reguler':'Darurat'}</span><small>{r.number}</small></td>}<td><Badge status={r.status} cancellation={r.cancellation}/></td><td><button className="icon-button table-arrow" aria-label={'Lihat '+r.employeeName+' '+r.number} onClick={()=>r.status==='DRAFT'&&onDraft?onDraft(r):onSelect(r)}><ArrowUpRight size={17}/></button></td></tr>)}</tbody></table></div>:<Empty/>;}
@@ -372,7 +396,8 @@ function LeaveForm({user,today,draft,calendar,onDone,onDelete}:{user:Employee;to
     {deleting&&<Modal title="Hapus draft?" onClose={()=>setDeleting(false)}><p className="reason-text">Draft ini akan dihapus. Kuota tidak berubah karena draft belum memakai slot.</p><div className="modal-actions"><button className="button secondary" onClick={()=>setDeleting(false)}>Kembali</button><button className="button danger-button" disabled={busy} onClick={async()=>{setBusy(true);try{await api('/drafts/'+draft!.id,{method:'DELETE',key:crypto.randomUUID()});onDelete();}catch(e){setError((e as Error).message);setDeleting(false);}finally{setBusy(false);}}}>Hapus draft</button></div></Modal>}
   </div>;
 }
-function Detail({leave:r,user,today,onClose,onUpdate,onCopy}:{leave:Leave;user:Employee;today:string;onClose:()=>void;onUpdate:(r:Leave)=>void;onCopy:()=>void}){const {positionLabel}=useDirectory();const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [reason,setReason]=useState('');const [channel,setChannel]=useState(r.confirmationChannel||'WhatsApp');const [isEditingConfirm,setIsEditingConfirm]=useState(false);const [customChannel,setCustomChannel]=useState(Boolean(r.confirmationChannel&&!['WhatsApp','Telepon','Tatap Muka','Email'].includes(r.confirmationChannel)));const [confirmAction,setConfirmAction]=useState('');
+function Detail({leave:r,user,today,unitName,onClose,onUpdate,onCopy}:{leave:Leave;user:Employee;today:string;unitName?:string;onClose:()=>void;onUpdate:(r:Leave)=>void;onCopy:()=>void}){
+  const [showCertificate,setShowCertificate]=useState(false);const {positionLabel}=useDirectory();const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [reason,setReason]=useState('');const [channel,setChannel]=useState(r.confirmationChannel||'WhatsApp');const [isEditingConfirm,setIsEditingConfirm]=useState(false);const [customChannel,setCustomChannel]=useState(Boolean(r.confirmationChannel&&!['WhatsApp','Telepon','Tatap Muka','Email'].includes(r.confirmationChannel)));const [confirmAction,setConfirmAction]=useState('');
   const canReview=user.roles.includes('SDM')&&r.employeeId!==user.id&&r.status==='PENDING_SDM';
   const [replacement,setReplacement]=useState<ReplacementCheck|null>(null);const [replacementError,setReplacementError]=useState('');const [replacementId,setReplacementId]=useState('');const [replacementRefresh,setReplacementRefresh]=useState(0);
   useEffect(()=>{
@@ -407,7 +432,10 @@ function Detail({leave:r,user,today,onClose,onUpdate,onCopy}:{leave:Leave;user:E
     const modalTitle=isCancelRequest?'Ajukan pembatalan cuti?':isApproveCancel?'Setujui pembatalan cuti?':isRejectCancel?'Tolak permohonan pembatalan?':confirmAction==='WITHDRAWN'?'Tarik pengajuan ini?':confirmAction==='APPROVED'?'Setujui pengajuan ini?':'Tolak pengajuan ini?';
     return <Modal key="decision" compact title={modalTitle} onClose={cancelDecision}>
       <div className="decision-summary"><strong>{r.employeeName}</strong><span>{r.number} · {(r.positionName??positionLabel(r.position))}</span><span>{fmt(r.effectiveStart,true)} – {fmt(r.effectiveEnd,true)} · {r.duration} hari kerja</span></div>
-      {confirmAction==='APPROVED'&&replacement?.rule?.enabled&&<p className="reason-text">{replacementId?'PGS: '+replacement.candidates.find(c=>c.id===replacementId)?.name:'Ketersediaan PGS akan diperiksa kembali saat keputusan disimpan.'}</p>}
+      {confirmAction==='APPROVED'&&replacement?.rule?.enabled&&(()=>{
+        const sel=replacementId?replacement.candidates.find(c=>c.id===replacementId):null;
+        return <p className="reason-text">{sel?`PGS: ${sel.name} (${sel.positionName||positionLabel(sel.position)}) · ${sel.outletName}`:'Ketersediaan PGS akan diperiksa kembali saat keputusan disimpan.'}</p>;
+      })()}
       {isCancelRequest?(
         <>
           <p className="reason-text">Permohonan pembatalan cuti akan dikirim ke SDM untuk diverifikasi. Jika disetujui, slot kuota cuti Anda pada bulan ini akan otomatis dilepas kembali.</p>
@@ -470,7 +498,7 @@ function Detail({leave:r,user,today,onClose,onUpdate,onCopy}:{leave:Leave;user:E
       <div><strong>Cuti Telah Dibatalkan Resmi</strong><p style={{margin:'2px 0 0',fontSize:12}}>Kuota cuti pada bulan ini telah dilepas. Anda dapat menggunakan tombol "Salin ke pengajuan baru" di bawah jika ingin mengajukan jadwal cuti baru (pindah tanggal).</p></div>
     </div>}
     {r.outletName&&<p className="reason-text">Outlet: {r.outletName}</p>}
-    {r.replacement&&<div className="alert info"><span><strong>PGS {(r.positionName??positionLabel(r.position))}: {r.replacement.employeeName}</strong><br/>{positionLabel(r.replacement.position)} · {r.replacement.outletName}{r.status==='WITHDRAWN'?' · Tugas PGS telah dilepas':''}</span></div>}
+    {r.replacement&&<div className="alert info"><span><strong>PGS {(r.positionName??positionLabel(r.position))}: {r.replacement.employeeName}</strong><br/>Jabatan: {positionLabel(r.replacement.position)} · {r.replacement.outletName}{r.status==='WITHDRAWN'?' · Tugas PGS telah dilepas':''}</span></div>}
     {canReview&&<ReplacementPanel check={replacement} error={replacementError} refresh={()=>{setReplacement(null);setReplacementRefresh(n=>n+1);}} selected={replacementId} onSelect={setReplacementId}/>}
     <h4>Alasan pengajuan</h4><p className="reason-text">{r.reason}</p>{r.decisionReason&&<div className="alert info"><span><strong>Catatan keputusan</strong><br/>{r.decisionReason}</span></div>}
     <h4>Aktivitas pengajuan</h4><div className="timeline">{r.events.map((e,i)=><div key={i}><i/><strong>{e.text}</strong><small>{e.actor} · {new Date(e.at).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'})} WIB</small></div>)}</div>
@@ -563,8 +591,9 @@ function Detail({leave:r,user,today,onClose,onUpdate,onCopy}:{leave:Leave;user:E
       {r.status==='PENDING_SDM'&&r.employeeId===user.id&&<button className="button secondary" onClick={()=>setConfirmAction('WITHDRAWN')}>Tarik pengajuan</button>}
       {hasPendingCancellation&&r.employeeId===user.id&&<button className="button secondary" disabled={busy} onClick={()=>update('cancel-abort',{})}>Tarik permohonan pembatalan</button>}
       {canRequestCancellation&&<button className="button secondary" style={{color:'#ad302b',borderColor:'#f1cfcb'}} onClick={()=>{setReason('');setConfirmAction('CANCEL_REQUEST');}}><X size={16}/>Ajukan pembatalan cuti</button>}
-      {canReview&&<><button className="button secondary" onClick={()=>setConfirmAction('REJECTED')}>Tolak pengajuan</button><button className="button primary" disabled={busy||pgsBlocked||r.effectiveStart<today||(r.category==='REGULAR'&&r.confirmation!=='CONFIRMED')} onClick={()=>setConfirmAction('APPROVED')}><Check size={17}/>Setujui pengajuan</button></>}
+      {r.status==='APPROVED'&&<button type="button" className="button secondary" onClick={()=>setShowCertificate(true)}><Printer size={16}/>Surat Cuti</button>}{canReview&&<><button className="button secondary" onClick={()=>setConfirmAction('REJECTED')}>Tolak pengajuan</button><button className="button primary" disabled={busy||pgsBlocked||r.effectiveStart<today||(r.category==='REGULAR'&&r.confirmation!=='CONFIRMED')} onClick={()=>setConfirmAction('APPROVED')}><Check size={17}/>Setujui pengajuan</button></>}
     </div>
+    {showCertificate&&<LeaveCertificateModal leave={r} unitName={unitName||'Kantor Cabang'} positionName={r.positionName||positionLabel(r.position)} onClose={()=>setShowCertificate(false)}/>}
   </Modal>;
 }
 function Admin({onChange,onToast,today,userId}:{onChange:()=>void;onToast:(s:string)=>void;today:string;userId:string}){const [data,setData]=useState<any>(null);const [tab,setTab]=useState(()=>{try{const saved=sessionStorage.getItem('bni_cuti_admin_tab');if(['employees','positions','outlets','replacements','quota','calendar','jobs','audit'].includes(saved||''))return saved!;}catch{}return 'employees';});const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [editing,setEditing]=useState<any>(null);const [deleting,setDeleting]=useState<Employee|null>(null);const [deleteError,setDeleteError]=useState('');const [date,setDate]=useState('');const [label,setLabel]=useState('');const [working,setWorking]=useState(false);const [qm,setQm]=useState(addMonths(today.slice(0,7)+'-01',1).slice(0,7));const [pos,setPos]=useState('CS_BINA');const [limit,setLimit]=useState(2);const [calYear,setCalYear]=useState('ALL');
@@ -574,13 +603,76 @@ function Admin({onChange,onToast,today,userId}:{onChange:()=>void;onToast:(s:str
   if(!data)return <div className="panel empty">{error||'Memuat administrasi…'}</div>;
   const POSITIONS:readonly (readonly [string,string,number])[]=data.positions;const positionLabel=(code:string)=>POSITIONS.find(p=>p[0]===code)?.[1]??code;
   return <section className="panel"><div className="list-toolbar"><div className="tabs">{[['employees','Karyawan'],['positions','Posisi'],['outlets','Outlet'],['replacements','Aturan PGS'],['quota','Posisi & kuota'],['calendar','Kalender kerja'],['jobs','Notifikasi email'],['audit','Audit']].map(([id,name])=><button key={id} className={tab===id?'selected':''} onClick={()=>{setTab(id);setError('');try{sessionStorage.setItem('bni_cuti_admin_tab',id);}catch{}}}>{name}</button>)}</div></div>{error&&<div className="alert danger margin" role="alert">{error}</div>}
-    {tab==='employees'&&<><div className="panel-heading"><div><h2>Direktori karyawan</h2><p>Akses dan penempatan karyawan pada unit ini.</p></div><button className="button primary" onClick={()=>setEditing({name:'',email:'',phone:'',position:POSITIONS[0]?.[0]??'',outletId:data.outlets[0]?.id??'',roles:['EMPLOYEE'],active:true,password:''})}><Plus size={17}/>Tambah karyawan</button></div><div className="table-scroll"><table><thead><tr><th>Nama</th><th>Posisi</th><th>Outlet</th><th>Akses</th><th>Status</th><th>Aksi</th></tr></thead><tbody>{data.employees.map((e:Employee)=><tr key={e.id}><td><strong>{e.name}</strong><small>{e.email}</small></td><td>{positionLabel(e.position)}</td><td>{data.outlets.find((o:any)=>o.id===e.outletId)?.name??'—'}</td><td>{e.roles.join(', ')}</td><td>{e.active?'Aktif':'Nonaktif'}</td><td><div className="employee-actions"><button className="text-button" disabled={busy} onClick={()=>setEditing({...e,password:''})}>Edit</button>{e.id!==userId&&<button className="text-button delete-link" disabled={busy} aria-label={'Hapus '+e.name} onClick={()=>{setDeleteError('');setDeleting(e);}}>Hapus</button>}</div></td></tr>)}</tbody></table></div></>}
+    {tab==='employees'&&<><div className="panel-heading"><div><h2>Direktori karyawan</h2><p>Akses dan penempatan karyawan pada unit ini.</p></div><button className="button primary" onClick={()=>setEditing({name:'',email:'',phone:'',position:POSITIONS[0]?.[0]??'',outletId:data.outlets[0]?.id??'',roles:['EMPLOYEE'],active:true,password:''})}><Plus size={17}/>Tambah karyawan</button></div><div className="table-scroll"><table><thead><tr><th>Nama</th><th>Posisi</th><th>Outlet</th><th>Akses</th><th>Status</th><th>Aksi</th></tr></thead><tbody>{data.employees.map((e:Employee)=><tr key={e.id}><td><strong>{e.name}</strong><small>{e.email}</small></td><td>{positionLabel(e.position)}</td><td>{data.outlets.find((o:any)=>o.id===e.outletId)?.name??'—'}</td><td>{e.roles.join(', ')}</td><td>{e.active?'Aktif':'Nonaktif'}</td><td><div className="employee-actions"><button className="text-button" disabled={busy} onClick={()=>setEditing({...e,position:e.roles.includes('SDM')?'SDM':e.position,password:''})}>Edit</button>{e.id!==userId&&<button className="text-button delete-link" disabled={busy} aria-label={'Hapus '+e.name} onClick={()=>{setDeleteError('');setDeleting(e);}}>Hapus</button>}</div></td></tr>)}</tbody></table></div></>}
     {['positions','outlets','replacements'].includes(tab)&&<ReplacementAdmin key={tab} tab={tab} data={data} onChange={async()=>{await load();onChange();}} onToast={onToast}/>}
     {tab==='quota'&&<div className="admin-content"><h2>Kuota orang per posisi</h2><p className="muted">Berlaku per bulan dan sekaligus menjadi batas orang cuti bersamaan. Periode yang sudah memiliki alokasi dibekukan.</p><div className="field-grid three"><Field label="Bulan berlaku"><input type="month" value={qm} onChange={e=>setQm(e.target.value)}/></Field><Field label="Posisi"><select value={pos} onChange={e=>{setPos(e.target.value);setLimit(POSITIONS.find(p=>p[0]===e.target.value)![2]);}}>{POSITIONS.map(([p,l])=><option key={p} value={p}>{l}</option>)}</select></Field><Field label="Kuota orang"><input type="number" min={0} max={1000} value={limit} onChange={e=>setLimit(+e.target.value)}/></Field></div><button className="button primary" disabled={busy} onClick={()=>save('quota',{month:qm,position:pos,limit})}>Simpan kuota periode</button><div className="quota-cards admin-quotas">{POSITIONS.map(([p,l,q])=><div key={p}><strong>{l}</strong><span>{data.policy.quotas[Object.keys(data.policy.quotas).filter(m=>m<=qm).sort().at(-1)??'']?.[p]??q}<small> orang</small></span></div>)}</div></div>}
     {tab==='calendar'&&<div className="admin-content"><div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:12}}><div><h2>Kalender kerja unit</h2><p className="muted">Pola kerja Senin–Jumat. Tambahkan libur atau hari kerja khusus. Perubahan H-3 yang menyentuh cuti aktif akan ditolak.</p></div><button type="button" className="button secondary" disabled={busy} onClick={()=>save('calendar/sync-2027',{})} title="Muat ulang seluruh hari libur nasional dan cuti bersama 2027">Sinkronkan Libur 2027</button></div><div className="field-grid three"><Field label="Tanggal pengecualian"><input type="date" min={today} value={date} onChange={e=>setDate(e.target.value)}/></Field><Field label="Keterangan"><input value={label} onChange={e=>setLabel(e.target.value)} placeholder="Contoh: libur unit"/></Field><Field label="Jenis hari"><select value={String(working)} onChange={e=>setWorking(e.target.value==='true')}><option value="false">Hari libur</option><option value="true">Hari kerja khusus</option></select></Field></div><button className="button primary" disabled={busy||!date||label.length<2} onClick={()=>save('calendar',{date,label,working})}>Simpan kalender</button><div style={{marginTop:24,display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10}}><strong>Daftar Pengecualian & Libur ({Object.keys(data.policy.calendar.exceptions).length})</strong><div style={{display:'flex',gap:6}}>{['ALL','2026','2027'].map(y=><button key={y} type="button" className={'button '+(calYear===y?'primary':'secondary')} style={{minHeight:30,padding:'4px 10px',fontSize:11}} onClick={()=>setCalYear(y)}>{y==='ALL'?'Semua':y}</button>)}</div></div><div className="exception-list">{Object.entries(data.policy.calendar.exceptions).sort(([a],[b])=>a.localeCompare(b)).filter(([d])=>calYear==='ALL'||d.startsWith(calYear)).map(([d,v]:any)=><div key={d}><span><strong>{fmt(d,true)}</strong> · {v.label} · {v.working?'Kerja':'Libur'}</span><button className="text-button" disabled={busy} onClick={()=>save('calendar',{date:d,label:v.label,working:v.working,remove:true})}>Hapus pengecualian</button></div>)}</div></div>}
     {tab==='jobs'&&<div className="admin-content"><h2>Pengiriman notifikasi</h2><div className="alert info"><Mail size={18}/><span>CAPTURED berarti email ditampung lokal untuk simulasi, bukan terkirim ke inbox. Penerima SDM mengikuti akun SDM aktif pada unit ini.</span></div>{data.jobs.length?<div className="table-scroll"><table><thead><tr><th>Jenis</th><th>Jadwal</th><th>Status</th><th>Upaya gagal</th><th/></tr></thead><tbody>{data.jobs.map((j:any)=><tr key={j.id}><td>{j.kind}</td><td>{new Date(j.due_at).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'})}</td><td>{j.state}<small>{j.last_error}</small></td><td>{j.attempts}</td><td>{j.state==='FAILED'&&<button className="text-button" disabled={busy} onClick={()=>save('jobs/'+j.id+'/retry',{})}>Coba ulang</button>}</td></tr>)}</tbody></table></div>:<Empty title="Belum ada email dalam antrean" text="Pengajuan baru dan keputusan SDM akan membuat notifikasi."/>}</div>}
     {tab==='audit'&&<div className="admin-content"><h2>Jejak aktivitas</h2>{data.audit.length?<div className="table-scroll"><table><thead><tr><th>Waktu</th><th>Pengguna</th><th>Aksi</th><th>Objek</th></tr></thead><tbody>{data.audit.map((a:any)=><tr key={a.id}><td>{new Date(a.at).toLocaleString('id-ID')}</td><td>{data.employees.find((e:Employee)=>e.id===a.actor_id)?.name??a.actor_id}</td><td>{a.action}</td><td className="mono">{a.object_id}</td></tr>)}</tbody></table></div>:<Empty title="Belum ada aktivitas tercatat"/>}</div>}
-    {editing&&<Modal title={editing.id?'Edit karyawan':'Tambah karyawan'} onClose={()=>setEditing(null)}><form onSubmit={e=>{e.preventDefault();const {unit,...body}=editing;if(!body.password)delete body.password;save('employee',body);}}><Field label="Nama lengkap"><input required value={editing.name} onChange={e=>setEditing({...editing,name:e.target.value})}/></Field><div className="field-grid"><Field label="Email"><input type="email" required value={editing.email} onChange={e=>setEditing({...editing,email:e.target.value})}/></Field><Field label="Nomor HP"><input required value={editing.phone} onChange={e=>setEditing({...editing,phone:e.target.value})}/></Field></div><Field label="Posisi"><select value={editing.position} onChange={e=>setEditing({...editing,position:e.target.value})}>{POSITIONS.map(([p,l])=><option key={p} value={p}>{l}</option>)}</select></Field><Field label="Outlet"><select required value={editing.outletId??''} onChange={e=>setEditing({...editing,outletId:e.target.value})}><option value="" disabled>Pilih outlet</option>{data.outlets.map((o:any)=><option key={o.id} value={o.id}>{o.name}</option>)}</select></Field><Field label={editing.id?'Kata sandi baru (kosongkan jika tetap)':'Kata sandi awal'} hint={PASSWORD_HINT}><input type="password" minLength={6} maxLength={200} pattern={PASSWORD_PATTERN.source} title={PASSWORD_HINT} required={!editing.id} autoComplete="new-password" value={editing.password} onChange={e=>setEditing({...editing,password:e.target.value})}/></Field><div className="inline-actions">{['EMPLOYEE','SDM','ADMIN'].map(role=><label className="checkbox" key={role}><input type="checkbox" checked={editing.roles.includes(role)} onChange={e=>setEditing({...editing,roles:e.target.checked?[...editing.roles,role]:editing.roles.filter((r:string)=>r!==role)})}/>{role}</label>)}</div><label className="checkbox"><input type="checkbox" checked={editing.active} onChange={e=>setEditing({...editing,active:e.target.checked})}/>Akun aktif</label>{error&&<div className="alert danger">{error}</div>}<div className="modal-actions"><button className="button primary" disabled={busy}>Simpan karyawan</button></div></form></Modal>}
+    {editing&&(()=>{
+      const isSdm=editing.roles.includes('SDM');
+      const positionOptions=isSdm?[['SDM','SDM']] as const:POSITIONS.filter(([p])=>p!=='SDM');
+      return (
+        <Modal title={editing.id?'Edit karyawan':'Tambah karyawan'} onClose={()=>setEditing(null)}>
+          <form onSubmit={e=>{
+            e.preventDefault();
+            const {unit,...body}=editing;
+            if(isSdm) body.position='SDM';
+            if(!body.password)delete body.password;
+            save('employee',body);
+          }}>
+            <Field label="Nama lengkap"><input required value={editing.name} onChange={e=>setEditing({...editing,name:e.target.value})}/></Field>
+            <div className="field-grid">
+              <Field label="Email"><input type="email" required value={editing.email} onChange={e=>setEditing({...editing,email:e.target.value})}/></Field>
+              <Field label="Nomor HP"><input required value={editing.phone} onChange={e=>setEditing({...editing,phone:e.target.value})}/></Field>
+            </div>
+            <Field label="Posisi">
+              <select value={isSdm?'SDM':editing.position} onChange={e=>setEditing({...editing,position:e.target.value})}>
+                {positionOptions.map(([p,l])=><option key={p} value={p}>{l}</option>)}
+              </select>
+            </Field>
+            <Field label="Outlet">
+              <select required value={editing.outletId??''} onChange={e=>setEditing({...editing,outletId:e.target.value})}>
+                <option value="" disabled>Pilih outlet</option>
+                {data.outlets.map((o:any)=><option key={o.id} value={o.id}>{o.name}</option>)}
+              </select>
+            </Field>
+            <Field label={editing.id?'Kata sandi baru (kosongkan jika tetap)':'Kata sandi awal'} hint={PASSWORD_HINT}>
+              <input type="password" minLength={6} maxLength={200} pattern={PASSWORD_PATTERN.source} title={PASSWORD_HINT} required={!editing.id} autoComplete="new-password" value={editing.password} onChange={e=>setEditing({...editing,password:e.target.value})}/>
+            </Field>
+            <div className="inline-actions">
+              {['EMPLOYEE','SDM','ADMIN'].map(role=>
+                <label className="checkbox" key={role}>
+                  <input
+                    type="checkbox"
+                    checked={editing.roles.includes(role)}
+                    onChange={e=>{
+                      const nextRoles=e.target.checked?[...editing.roles,role]:editing.roles.filter((r:string)=>r!==role);
+                      const nextIsSdm=nextRoles.includes('SDM');
+                      let nextPos=editing.position;
+                      if(nextIsSdm){
+                        nextPos='SDM';
+                      } else if(nextPos==='SDM'){
+                        nextPos=POSITIONS.find(([p])=>p!=='SDM')?.[0]??'';
+                      }
+                      setEditing({
+                        ...editing,
+                        roles:nextRoles,
+                        position:nextPos
+                      });
+                    }}
+                  />
+                  {role}
+                </label>
+              )}
+            </div>
+            <label className="checkbox"><input type="checkbox" checked={editing.active} onChange={e=>setEditing({...editing,active:e.target.checked})}/>Akun aktif</label>
+            {error&&<div className="alert danger">{error}</div>}
+            <div className="modal-actions"><button className="button primary" disabled={busy}>Simpan karyawan</button></div>
+          </form>
+        </Modal>
+      );
+    })()}
     {deleting&&<Modal compact title="Hapus karyawan?" onClose={()=>{if(!busy)setDeleting(null);}}><div className="decision-summary"><strong>{deleting.name}</strong><span>{deleting.email}</span></div><p className="reason-text">Karyawan akan dihapus dari daftar dan tidak bisa login. Riwayat cuti tetap tersimpan.</p>{deleteError&&<div className="alert danger" role="alert">{deleteError}</div>}<div className="modal-actions"><button className="button secondary" disabled={busy} onClick={()=>setDeleting(null)}>Batal</button><button className="button danger-button" disabled={busy} onClick={deleteEmployee}>{busy?'Menghapus…':'Hapus karyawan'}</button></div></Modal>}
   </section>;
 }
