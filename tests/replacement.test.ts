@@ -63,14 +63,24 @@ it('reserves optional PGS atomically, protects staffing changes and releases on 
   const decisions=await Promise.allSettled([first,second].map(r=>act(db,hr,r.id,'decision',{version:r.version,outcome:'APPROVED',replacementId:pgs.id},randomUUID(),clock)));
   expect(decisions.filter(r=>r.status==='fulfilled')).toHaveLength(1);
   const approved=(await requests(db)).find(r=>r.status==='APPROVED')!;expect(approved.replacement?.employeeName).toBe(pgs.name);
+  expect(approved.replacement?.phone).toBe(pgs.phone);
+  const pgsJob=(await db.query('SELECT id, kind FROM mail_jobs WHERE event_key=$1',[`${approved.id}:PGS_ASSIGNED`])).rows[0] as {id:string,kind:string}|undefined;
+  expect(pgsJob?.kind).toBe('PGS_ASSIGNED');
+  const employeePgs=supertest.agent(app);await employeePgs.post('/api/login').set('X-Cuti-Client','web').send({email:pgs.email,password:'abc123'}).expect(200);
+  await employeePgs.get(`/api/leave-requests/${approved.id}`).expect(200);
+  const notified=await act(db,hr,approved.id,'notify-pgs',{version:approved.version,channel:'WhatsApp'},randomUUID(),clock);
+  expect(notified.replacement?.notifiedChannel).toBe('WhatsApp');
+  expect(notified.events.some(e=>e.text.includes('SDM mengabarkan penugasan kepada PGS'))).toBe(true);
   expect((await preview(db,pgs,{...input,email:pgs.email},clock)).errors.some(e=>e.code==='PGS_DUTY')).toBe(true);
   await expect(leave(pgs)).rejects.toThrow('tugas PGS');
   await remove('employee/'+pgs.id).expect(409);
   await post('employee',{...pgs,active:false}).expect(409);
   const owner=approved.employeeId===manager.id?manager:manager2;
-  const cancellation=await act(db,owner,approved.id,'cancel-request',{version:approved.version,reason:'Tidak jadi mengambil cuti.'},randomUUID(),clock);
+  const cancellation=await act(db,owner,approved.id,'cancel-request',{version:notified.version,reason:'Tidak jadi mengambil cuti.'},randomUUID(),clock);
   expect((await replacementCheck(db,first,await getPolicy(db,hr.unit))).candidates.find(c=>c.id===pgs.id)?.available).toBe(approved.id===first.id);
   await act(db,hr,approved.id,'cancel-review',{version:cancellation.version,outcome:'APPROVED'},randomUUID(),clock);
+  const releasedJob=(await db.query('SELECT id, kind FROM mail_jobs WHERE event_key=$1',[`${approved.id}:PGS_RELEASED`])).rows[0] as {id:string,kind:string}|undefined;
+  expect(releasedJob?.kind).toBe('PGS_RELEASED');
   expect((await replacementCheck(db,first,await getPolicy(db,hr.unit))).candidates.find(c=>c.id===pgs.id)?.available).toBe(true);
 });
 it('adds and removes custom positions and empty outlets with scoped admin access',async()=>{

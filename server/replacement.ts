@@ -21,7 +21,7 @@ export async function replacementCheck(db:SQL,leave:Leave,policy:Policy):Promise
     if(same?!rule.sameOutlet:rule.otherOutlets==='NONE'||(rule.otherOutlets==='SELECTED'&&!rule.outletIds.includes(location.id)))return [];
     const ownLeave=all.some(r=>r.employeeId===e.id&&ACTIVE.includes(r.status)&&overlaps(r.days,leave.days));
     const assignment=all.some(r=>r.id!==leave.id&&r.status==='APPROVED'&&r.replacement?.employeeId===e.id&&overlaps(r.days,leave.days));
-    return [{id:e.id,name:e.name,position:e.position,positionName:e.positionName??e.position,outletId:location.id,outletName:location.name,available:!ownLeave&&!assignment,reason:ownLeave?'Sedang cuti atau menunggu review':assignment?'Sudah bertugas sebagai PGS':'Tersedia selama seluruh tanggal cuti'}];
+    return [{id:e.id,name:e.name,phone:e.phone,email:e.email,position:e.position,positionName:e.positionName??e.position,outletId:location.id,outletName:location.name,available:!ownLeave&&!assignment,reason:ownLeave?'Sedang cuti atau menunggu review':assignment?'Sudah bertugas sebagai PGS':'Tersedia selama seluruh tanggal cuti'}];
   }).sort((a,b)=>Number(b.available)-Number(a.available)||Number(b.outletId===outletId)-Number(a.outletId===outletId)||a.name.localeCompare(b.name)):[];
   return {rule,outletId,outletName:leave.outletName??locations.find(o=>o.id===outletId)?.name??'Outlet asal tidak tersedia',candidates};
 }

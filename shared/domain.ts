@@ -10,8 +10,8 @@ export type PositionDefinition = readonly [string,string,number];
 export interface Employee { id:string; name:string; email:string; phone:string; position:string; unit:string; roles:Role[]; active:boolean; deletedAt?:string; outletId?:string; positionName?:string; }
 export interface Outlet { id:string; unit:string; name:string; deletedAt?:string; }
 export interface ReplacementRule { position:string; enabled:boolean; sourcePositions:string[]; sameOutlet:boolean; otherOutlets:'NONE'|'ALL'|'SELECTED'; outletIds:string[]; }
-export interface ReplacementAssignment { employeeId:string; employeeName:string; position:string; outletId:string; outletName:string; assignedAt:string; assignedBy:string; }
-export interface ReplacementCandidate { id:string; name:string; position:string; positionName?:string; outletId:string; outletName:string; available:boolean; reason:string; }
+export interface ReplacementAssignment { employeeId:string; employeeName:string; position:string; positionName?:string; outletId:string; outletName:string; assignedAt:string; assignedBy:string; phone?:string; email?:string; notifiedAt?:string; notifiedChannel?:string; notifiedBy?:string; }
+export interface ReplacementCandidate { id:string; name:string; position:string; positionName?:string; outletId:string; outletName:string; available:boolean; reason:string; phone?:string; email?:string; }
 export interface ReplacementCheck { rule:ReplacementRule|null; outletId:string; outletName:string; candidates:ReplacementCandidate[]; }
 export interface Calendar { version:number; weekdays:number[]; exceptions:Record<string, {working:boolean; label:string}>; }
 export interface Policy { calendar:Calendar; quotas:Record<string,Record<string,number>>; replacementRules?:Record<string,ReplacementRule>; positions?:PositionDefinition[]; }

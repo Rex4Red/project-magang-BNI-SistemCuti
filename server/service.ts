@@ -12,7 +12,7 @@ export async function requests(db:SQL,unit?:string):Promise<Leave[]> {return (aw
 export async function getPolicy(db:SQL,unit:string):Promise<Policy> {const r=(await db.query('SELECT policy FROM units WHERE id=$1',[unit])).rows[0];ensure(r,'Unit tidak tersedia.',404);return r.policy;}
 export async function saveRequest(db:SQL,r:Leave) {await db.query(`INSERT INTO requests(id,employee_id,unit_id,position,status,month,data) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(id) DO UPDATE SET status=excluded.status,month=excluded.month,data=excluded.data`,[r.id,r.employeeId,r.unit,r.position,r.status,r.effectiveStart.slice(0,7),r]);}
 export async function audit(db:SQL,actor:Employee,action:string,id:string) {await db.query('INSERT INTO audit(id,unit_id,actor_id,action,object_id) VALUES($1,$2,$3,$4,$5)',[randomUUID(),actor.unit,actor.id,action,id]);}
-export function canRead(actor:Employee,r:Leave) {return r.employeeId===actor.id || (actor.roles.includes('SDM')&&r.unit===actor.unit);}
+export function canRead(actor:Employee,r:Leave) {return r.employeeId===actor.id || r.replacement?.employeeId===actor.id || (actor.roles.includes('SDM')&&r.unit===actor.unit);}
 export function checkEmail(email:string) {const domains=process.env.ALLOWED_EMAIL_DOMAINS?.split(',').map(s=>s.trim().toLowerCase());if(domains?.length)ensure(domains.includes(email.split('@')[1]?.toLowerCase()),'Domain email tidak diizinkan organisasi.');}
 export const digest=(o:unknown)=>createHash('sha256').update(JSON.stringify(o)).digest('hex');
 export async function preview(db:SQL,actor:Employee,input:LeaveInput,now:Date) {
@@ -102,6 +102,16 @@ export async function act(db:Database,actor:Employee,id:string,action:string,bod
         text='SDM menolak permohonan pembatalan cuti: '+body.reason.trim();
       }
     }
+    else if(action==='notify-pgs'){
+      ensure(actor.roles.includes('SDM'),'Hanya SDM yang dapat mengabarkan PGS.',403);
+      ensure(leave.status==='APPROVED'&&leave.replacement,'Pengajuan harus sudah disetujui dan memiliki penugasan PGS.',400);
+      const rep=leave.replacement!;
+      const ch=typeof body.channel==='string'&&body.channel.trim()?body.channel.trim():'WhatsApp';
+      rep.notifiedAt=now.toISOString();
+      rep.notifiedChannel=ch;
+      rep.notifiedBy=actor.name;
+      text=`SDM mengabarkan penugasan kepada PGS (${rep.employeeName}) via ${ch}`;
+    }
     else {
       ensure(leave.status==='PENDING_SDM','Pengajuan sudah diputuskan atau ditarik.',409,'REQUEST_ALREADY_DECIDED');
       ensure(actor.roles.includes('SDM')&&actor.id!==leave.employeeId,'Review memerlukan SDM lain yang berwenang.',403);
@@ -117,16 +127,29 @@ export async function act(db:Database,actor:Employee,id:string,action:string,bod
             if(body.replacementId){
               const candidate=check.candidates.find(c=>c.id===body.replacementId&&c.available);
               ensure(candidate,'Calon PGS sudah tidak tersedia atau tidak memenuhi aturan. Periksa kembali.',409,'REPLACEMENT_UNAVAILABLE');
-              leave.replacement={employeeId:candidate!.id,employeeName:candidate!.name,position:candidate!.position,outletId:candidate!.outletId,outletName:candidate!.outletName,assignedAt:now.toISOString(),assignedBy:actor.name};
+              leave.replacement={employeeId:candidate!.id,employeeName:candidate!.name,position:candidate!.position,positionName:candidate!.positionName,outletId:candidate!.outletId,outletName:candidate!.outletName,phone:candidate!.phone,email:candidate!.email,assignedAt:now.toISOString(),assignedBy:actor.name};
             }
           }else ensure(!body.replacementId,'Aturan PGS belum aktif untuk posisi ini.');
         }
         else ensure(typeof body.reason==='string'&&body.reason.trim().length>=5&&body.reason.length<=2000,'Alasan penolakan minimal 5 karakter.');
-        leave.status=body.outcome;leave.decisionReason=typeof body.reason==='string'?body.reason.slice(0,2000):'';text=body.outcome==='APPROVED'?'Pengajuan disetujui SDM':'Pengajuan ditolak SDM';
+        leave.status=body.outcome;leave.decisionReason=typeof body.reason==='string'?body.reason.slice(0,2000):'';text=body.outcome==='APPROVED'?(leave.replacement?`Pengajuan disetujui SDM (PGS: ${leave.replacement.employeeName})`:'Pengajuan disetujui SDM'):'Pengajuan ditolak SDM';
       }else throw new AppError(404,'Aksi tidak ditemukan.');
     }
-    leave.version++;leave.events.push({at:now.toISOString(),text,actor:actor.name});await saveRequest(tx,leave);await audit(tx,actor,action.toUpperCase(),id);
-    if(action==='decision'||action==='cancel-review')await mail(tx,leave,'DECISION',now.toISOString());
+    leave.version++;leave.events.push({at:now.toISOString(),text,actor:actor.name});
+    if(action==='decision'&&leave.status==='APPROVED'&&leave.replacement){
+      leave.events.push({at:now.toISOString(),text:`Penugasan PGS: ${leave.replacement.employeeName} (${leave.replacement.position})`,actor:actor.name});
+    }
+    await saveRequest(tx,leave);await audit(tx,actor,action.toUpperCase(),id);
+    if(action==='decision'||action==='cancel-review'){
+      await mail(tx,leave,'DECISION',now.toISOString());
+      if(leave.replacement){
+        if(action==='decision'&&leave.status==='APPROVED'){
+          await mail(tx,leave,'PGS_ASSIGNED',now.toISOString());
+        }else if(action==='cancel-review'&&leave.cancellation?.status==='APPROVED'){
+          await mail(tx,leave,'PGS_RELEASED',now.toISOString());
+        }
+      }
+    }
     if(action==='withdraw'||action==='decision'||action==='confirmation')await tx.query("UPDATE mail_jobs SET state='SKIPPED' WHERE request_id=$1 AND kind='REMINDER' AND state='QUEUED'",[id]);
     return leave;
   });

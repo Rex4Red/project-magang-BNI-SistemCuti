@@ -82,14 +82,30 @@ export function createApp(db:Database,options:{demo:boolean;now?:()=>Date;origin
   app.post('/api/logout',async(req,res)=>{await db.query('DELETE FROM sessions WHERE token=$1',[digest(req.cookies.cuti_session)]);res.clearCookie('cuti_session').json({ok:true});});
   app.get('/api/dashboard',async(req,res)=>{
     const month=z.string().regex(/^20\d{2}-(0[1-9]|1[0-2])$/).parse(req.query.month);const actor=req.actor;const all=await requests(db,actor.unit);const policy=await getPolicy(db,actor.unit);const sdm=actor.roles.includes('SDM');
-    const visible=all.filter(r=>sdm?r.status!=='DRAFT':r.employeeId===actor.id).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+    const staff=sdm?await employees(db):[];
+    const visible=all.filter(r=>sdm?r.status!=='DRAFT':(r.employeeId===actor.id||r.replacement?.employeeId===actor.id)).map(r=>{
+      if(r.replacement&&!r.replacement.phone){
+        const emp=staff.find(e=>e.id===r.replacement!.employeeId);
+        if(emp){r.replacement.phone=emp.phone;r.replacement.email=r.replacement.email||emp.email;}
+      }
+      return r;
+    }).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
     const positions=positionsFor(policy);const quotas=positions.filter(p=>sdm||actor.roles.includes('ADMIN')||p[0]===actor.position).map(([code,label])=>({...quotaFor(code,month,all,limitFor(code,month,policy,all),actor.id),label}));
-    const calendar=all.filter(r=>ACTIVE.includes(r.status)&&r.effectiveStart.slice(0,7)===month&&(sdm||r.position===actor.position)).map(r=>({id:sdm||r.employeeId===actor.id?r.id:'',name:sdm||r.employeeId===actor.id?r.employeeName:'Rekan satu posisi',position:r.position,status:r.status,days:r.days}));
+    const calendar=all.filter(r=>ACTIVE.includes(r.status)&&r.effectiveStart.slice(0,7)===month&&(sdm||r.position===actor.position||r.replacement?.employeeId===actor.id)).map(r=>({id:sdm||r.employeeId===actor.id||r.replacement?.employeeId===actor.id?r.id:'',name:sdm||r.employeeId===actor.id||r.replacement?.employeeId===actor.id?r.employeeName:'Rekan satu posisi',position:r.position,status:r.status,days:r.days}));
     res.json({requests:visible,quotas,calendar,positions,blocked:blockedDays(month,policy.calendar),calendarConfig:policy.calendar,today:dateOnly(now()),unitName:(await db.query('SELECT name FROM units WHERE id=$1',[actor.unit])).rows[0].name});
   });
   app.post('/api/leave-requests/preview',async(req,res)=>{const input=inputSchema.parse(req.body);checkEmail(input.email);res.json(await preview(db,req.actor,input,now()));});
   app.post('/api/leave-requests',async(req,res)=>res.status(201).json(await submit(db,req.actor,req.body,req.get('idempotency-key')??'',now())));
-  app.get('/api/leave-requests/:id',async(req,res)=>{const r=(await requests(db,req.actor.unit)).find(r=>r.id===req.params.id);ensure(r&&canRead(req.actor,r),'Pengajuan tidak ditemukan.',404);res.json(r);});
+  app.get('/api/leave-requests/:id',async(req,res)=>{
+    const r=(await requests(db,req.actor.unit)).find(r=>r.id===req.params.id);
+    ensure(r&&canRead(req.actor,r),'Pengajuan tidak ditemukan.',404);
+    const found=r!;
+    if(found.replacement&&!found.replacement.phone){
+      const emp=(await employees(db)).find(e=>e.id===found.replacement!.employeeId);
+      if(emp){found.replacement.phone=emp.phone;found.replacement.email=found.replacement.email||emp.email;}
+    }
+    res.json(found);
+  });
   app.get('/api/leave-requests/:id/replacements',async(req,res)=>{
     ensure(req.actor.roles.includes('SDM'),'Akses SDM diperlukan.',403);
     const leave=(await requests(db,req.actor.unit)).find(r=>r.id===req.params.id);ensure(leave&&canRead(req.actor,leave),'Pengajuan tidak ditemukan.',404);
