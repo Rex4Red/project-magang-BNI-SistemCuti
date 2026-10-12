@@ -6,6 +6,7 @@ import {DirectoryContext,useDirectory} from './DirectoryContext';
 import {ReplacementAdmin} from './ReplacementAdmin';
 import {ReplacementPanel} from './ReplacementPanel';
 import {Modal} from './Modal';
+import {NewLeavePopup} from './NewLeavePopup';
 import {LeaveCertificateModal} from './LeaveCertificateModal';
 import {SdmAnalytics} from './SdmAnalytics';
 import {VerifyCertificate} from './VerifyCertificate';
@@ -109,10 +110,11 @@ export default function App(){
   if(boot)return <div className="boot"><span className="bni-logo"><img src="/images/bni-logo.png" alt="BNI" /></span><p>Menyiapkan ruang kerja Anda…</p></div>;
   if(isVerify)return <VerifyCertificate onBack={()=>{setIsVerify(false);window.location.hash='';}}/>;
   if(!user)return <Login config={config} onLogin={u=>{
+    try{sessionStorage.removeItem('bni_cuti_popup_seen:'+u.id);}catch{}
     setData(null);
     setSelected(null);
     setUser(u);
-    const target=getInitialPage();
+    const target=u.roles.includes('SDM')?'dashboard':getInitialPage();
     const uAdmin=u.roles.includes('ADMIN');
     const uCanRequests=u.roles.includes('SDM')||(!uAdmin&&u.roles.includes('EMPLOYEE'));
     const targetPage=(target==='admin'&&!uAdmin)?'dashboard':(target==='requests'&&!uCanRequests)?'dashboard':(target==='form'&&uAdmin)?'dashboard':target;
@@ -132,6 +134,7 @@ export default function App(){
   ];
   const pending=data?.requests.filter((r:Leave)=>r.status==='PENDING_SDM'||(sdm&&r.status==='APPROVED'&&r.cancellation?.status==='PENDING')).length??0;
   return <DirectoryContext.Provider value={data?.positions??POSITIONS}><div className="app-shell">
+    {sdm&&data&&<NewLeavePopup key={user.id+':'+user.unit} requests={data.requests} userId={user.id} visible={page==='dashboard'&&!selected&&!menu} onSelect={setSelected}/>}
     {menu&&<div className="menu-scrim" onClick={()=>setMenu(false)}/>}
     <aside className={'sidebar '+(menu?'open':'')}><div className="brand"><span className="bni-logo"><img src="/images/bni-logo.png" alt="BNI" /></span></div>
       <div className="workspace"><div className="workspace-icon"><BriefcaseBusiness size={19}/></div><div><strong>{sdm?'Ruang kerja SDM':admin?'Administrator':'Ruang karyawan'}</strong><small>{data?.unitName??'Kantor Cabang'}</small></div></div>

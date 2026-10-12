@@ -25,6 +25,7 @@ Akun tersebut hanya untuk demonstrasi. Seed hanya berjalan pada database kosong.
 
 - Login cookie HttpOnly, peran karyawan/SDM/admin, dan pembatasan data per unit.
 - Dashboard bulanan, kuota orang unik, daftar pengajuan, dan kalender posisi.
+- Popup pengajuan baru untuk SDM di Ringkasan, diperiksa setiap 5 detik saat aplikasi terlihat. Beberapa pengajuan digabung dalam satu popup dengan tombol Tutup dan Lihat pengajuan. Saat SDM login, pengajuan yang masih menunggu review langsung ditampilkan tanpa bergantung pada filter bulan. Popup tidak berulang saat refresh dalam sesi yang sama; login kembali menampilkan pengingat lagi. Pengajuan baru yang terdeteksi saat SDM di halaman lain menunggu sampai kembali ke Ringkasan.
 - Pengajuan reguler/darurat, preview dari server, durasi hari kerja, pemotongan H-3, batas 5 hari, konflik rentang identik dan irisan maksimal 2 hari.
 - Draft: simpan, buka kembali, hapus, dan kirim; salin pengajuan ditolak/ditarik ke pengajuan baru.
 - Konfirmasi reguler, persetujuan/penolakan SDM, alasan keputusan, penarikan pending, dan timeline.

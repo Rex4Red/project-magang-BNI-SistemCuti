@@ -1,7 +1,7 @@
 import {test,expect,type Page} from '@playwright/test';
 import {mkdirSync} from 'node:fs';
 import {addMonths,addDays,blockedDays,isWorking,DEFAULT_CALENDAR} from '../../shared/domain';
-async function login(page:Page,role:string){await page.goto('/');await page.getByRole('button',{name:role,exact:true}).click();await page.getByRole('button',{name:'Masuk',exact:true}).click();await expect(page.getByRole('heading',{name:'Ringkasan',exact:true})).toBeVisible();}
+async function login(page:Page,role:string){await page.goto('/');await page.getByRole('button',{name:role,exact:true}).click();await page.getByRole('button',{name:'Masuk',exact:true}).click();await expect(page.getByRole('heading',{name:'Ringkasan',exact:true})).toBeVisible();if(role==='SDM'){const popup=page.getByRole('dialog',{name:'Pengajuan menunggu review',exact:true});await expect(popup).toBeVisible();await popup.getByRole('button',{name:'Tutup',exact:true}).click();}}
 test('admin configures PGS across outlets and SDM checks availability before approval',async({page,browser},testInfo)=>{
   await login(page,'Admin');await page.getByRole('button',{name:'Administrasi',exact:true}).click();
   await page.getByRole('button',{name:'Posisi',exact:true}).click();
@@ -81,6 +81,13 @@ test('employee submits regular leave, SDM confirms and approves, email captured'
   await expect(page.getByRole('button',{name:'Tinjau pengajuan'})).toBeEnabled();await page.getByRole('button',{name:'Tinjau pengajuan'}).click();await page.getByRole('button',{name:'Kirim pengajuan'}).click();
   const dialog=page.getByRole('dialog');await expect(dialog.getByText('Menunggu review',{exact:true})).toBeVisible();const title=await dialog.locator('.modal-header h2').innerText();const number=title.replace('Detail ','');
   await expect(pendingCard).toHaveText((pendingBefore+1)+'pengajuan',{timeout:15000});
+  const newLeavePopup=hr.getByRole('dialog',{name:'Pengajuan menunggu review',exact:true});
+  await expect(newLeavePopup).toBeVisible({timeout:15000});
+  await expect(newLeavePopup).toContainText('Alya Rahma');
+  await newLeavePopup.getByRole('button',{name:'Tutup',exact:true}).click();
+  const nextRefresh=hr.waitForResponse(r=>r.url().includes('/api/dashboard?month='+month)&&r.status()===200);
+  await nextRefresh;await expect(newLeavePopup).toHaveCount(0);
+  await hr.reload();await expect(hr.locator('.stats-grid')).toBeVisible();await expect(newLeavePopup).toHaveCount(0);
   await expect(hr.getByRole('button',{name:'Lihat Alya Rahma '+number,exact:true})).toBeVisible();
   await dialog.getByRole('button',{name:'Tarik pengajuan',exact:true}).click();
   await expect(page.getByRole('dialog',{name:'Tarik pengajuan ini?',exact:true})).toBeVisible();
