@@ -55,7 +55,7 @@ export async function buildXlsxReport(
     { key: 'colH', width: 14 }, // Tgl Akhir
     { key: 'colI', width: 14 }, // Hari Kerja
     { key: 'colJ', width: 20 }, // Status
-    { key: 'colK', width: 16 }, // Tgl Diajukan
+    { key: 'colK', width: 24 }, // Waktu Diajukan (Tgl & Jam)
   ];
 
   const fontSegoe = 'Segoe UI';
@@ -314,7 +314,7 @@ export async function buildXlsxReport(
     'Tgl Akhir',
     'Hari Kerja',
     'Status',
-    'Tgl Diajukan',
+    'Waktu Diajukan',
   ];
 
   ws.getRow(tableHeaderRow).height = 26;
@@ -349,7 +349,25 @@ export async function buildXlsxReport(
       ws.getRow(rowNum).height = 22;
 
       const categoryText = r.category === 'REGULAR' ? 'Reguler' : 'Darurat';
-      const submittedDate = r.submittedAt ? r.submittedAt.slice(0, 10) : (r.createdAt ? r.createdAt.slice(0, 10) : '-');
+      let submittedDate = '-';
+      const submitIso = r.submittedAt || r.createdAt;
+      if (submitIso) {
+        try {
+          const d = new Date(submitIso);
+          submittedDate = new Intl.DateTimeFormat('id-ID', {
+            timeZone: 'Asia/Jakarta',
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+          }).format(d).replaceAll('.', ':') + ' WIB';
+        } catch {
+          submittedDate = submitIso;
+        }
+      }
       const statusText = statusLabel[r.status] || r.status;
 
       let badgeBg = 'FFE2E8F0';

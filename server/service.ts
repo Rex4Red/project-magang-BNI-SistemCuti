@@ -4,7 +4,7 @@ import {z} from 'zod';
 import type {SQL,Database} from './db';
 import {assignedDuring,employeeOutlet,initializeDirectories,outlets,overlaps,replacementCheck} from './replacement';
 import {ACTIVE,DEFAULT_CALENDAR,POSITIONS,addMonths,dateOnly,evaluate,limitFor,reminderAt,validDate,type Employee,type Leave,type LeaveInput,type Policy} from '../shared/domain';
-export class AppError extends Error { constructor(public status:number,message:string,public code='INVALID',public details?:unknown){super(message);} }
+export class AppError extends Error { constructor(public status:number,message:string,public code='INVALID',public details?:unknown){super(message);this.name='AppError';Object.setPrototypeOf(this,new.target.prototype);} }
 export const ensure=(ok:unknown,message:string,status=422,code='INVALID',details?:unknown)=>{if(!ok)throw new AppError(status,message,code,details);};
 export const inputSchema=z.object({category:z.enum(['REGULAR','EMERGENCY']),subtype:z.string().trim().min(2).max(120),reason:z.string().trim().min(10).max(2000),start:z.string().refine(validDate),end:z.string().refine(validDate),email:z.email().max(200),phone:z.string().regex(/^\+?[\d ()-]{8,20}$/)});
 export async function employees(db:SQL):Promise<Employee[]> {return (await db.query("SELECT data FROM employees WHERE data->>'deletedAt' IS NULL")).rows.map(r=>r.data);}
@@ -173,6 +173,24 @@ export async function seed(db:Database,demo:boolean,now=new Date()) {
       if(updated) {
         pol.calendar.version = (pol.calendar.version ?? 1) + 1;
         await db.query('UPDATE units SET policy=$1 WHERE id=$2', [pol, u.id]);
+      }
+    }
+    if(demo) {
+      const password='BniCuti!2026';
+      let passwordHash: string | null = null;
+      const essentialPeople:Employee[]=[
+        {id:'sdm',name:'Nadia Putri',email:'sdm@demo.bni.local',phone:'081234567890',position:'BBO',unit:'KC01',roles:['SDM','EMPLOYEE'],active:true},
+        {id:'employee',name:'Alya Rahma',email:'karyawan@demo.bni.local',phone:'081234567891',position:'CS_BINA',unit:'KC01',roles:['EMPLOYEE'],active:true},
+        {id:'admin',name:'Administrator',email:'admin@demo.bni.local',phone:'081234567892',position:'BBO',unit:'KC01',roles:['ADMIN'],active:true},
+      ];
+      for(const p of essentialPeople) {
+        const row = (await db.query('SELECT data FROM employees WHERE id=$1 OR email=$2',[p.id,p.email])).rows[0];
+        if(!row || !row.data?.active || row.data?.deletedAt) {
+          if (!passwordHash) passwordHash = await hash(password, 10);
+          const cleanData = row ? {...row.data,...p,active:true} : p;
+          delete (cleanData as any).deletedAt;
+          await db.query('INSERT INTO employees(id,email,password_hash,data) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET email=excluded.email,password_hash=excluded.password_hash,data=excluded.data',[p.id,p.email,passwordHash,cleanData]);
+        }
       }
     }
     await initializeDirectories(db);return;

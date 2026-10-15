@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState,type FormEvent,type ReactNode} from 'react';
-import {ArrowDownToLine,ArrowRight,ArrowUpRight,Bell,CalendarDays,Check,CheckCheck,ChevronLeft,ChevronRight,Clock,Clock3,FileText,Home,Info,LayoutGrid,LogOut,Menu,Plus,Search,Settings2,ShieldCheck,Users,X,Mail,Send,BriefcaseBusiness,CheckCircle2,AlertCircle,SlidersHorizontal,Leaf,Save,Phone,MessageCircle,MessageSquare,Copy,RotateCcw,XCircle,UserCheck,Printer,BarChart3} from 'lucide-react';
+import {ArrowDownToLine,ArrowRight,ArrowUpRight,Bell,CalendarDays,Check,CheckCheck,ChevronDown,ChevronLeft,ChevronRight,Clock,Clock3,FileSpreadsheet,FileText,Home,Info,LayoutGrid,LogOut,Menu,Plus,Search,Settings2,ShieldCheck,Users,X,Mail,Send,BriefcaseBusiness,CheckCircle2,AlertCircle,SlidersHorizontal,Leaf,Save,Phone,MessageCircle,MessageSquare,Copy,RotateCcw,XCircle,UserCheck,Printer,BarChart3} from 'lucide-react';
 import {ACTIVE,PASSWORD_PATTERN,PASSWORD_HINT,POSITIONS,addMonths,dateOnly,isWorking,monthDays,positionLabel,statusLabel,calculateMaxEndDate,getValidEndDates,blockedDays,type Employee,type Leave,type LeaveInput,type Preview,type Quota} from '../shared/domain';
 import {api,action,ApiError} from './api';
 import {DirectoryContext,useDirectory} from './DirectoryContext';
@@ -13,6 +13,22 @@ import {SdmAnalytics} from './SdmAnalytics';
 import {VerifyCertificate} from './VerifyCertificate';
 import type {ReplacementCheck} from '../shared/domain';
 const fmt=(d:string,full=false)=>d?new Intl.DateTimeFormat('id-ID',{day:'numeric',month:full?'long':'short',...(full?{year:'numeric'}:{})}).format(new Date(d+'T00:00:00')):'—';
+const fmtDateTimeDate=(iso?:string)=>{
+  if(!iso)return '—';
+  try{
+    const d=new Date(iso);
+    if(isNaN(d.getTime()))return iso;
+    return new Intl.DateTimeFormat('id-ID',{timeZone:'Asia/Jakarta',day:'numeric',month:'short',year:'numeric'}).format(d);
+  }catch{return iso;}
+};
+const fmtDateTimeTime=(iso?:string)=>{
+  if(!iso)return '';
+  try{
+    const d=new Date(iso);
+    if(isNaN(d.getTime()))return '';
+    return new Intl.DateTimeFormat('id-ID',{timeZone:'Asia/Jakarta',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(d).replaceAll('.',':')+' WIB';
+  }catch{return '';}
+};
 const monthLabel=(m:string)=>new Intl.DateTimeFormat('id-ID',{month:'long',year:'numeric'}).format(new Date(m+'-01T00:00:00'));
 const initials=(name:string)=>name.split(' ').slice(0,2).map(n=>n[0]).join('');
 const Badge=({status,cancellation}:{status:Leave['status'];cancellation?:Leave['cancellation']})=>{
@@ -31,6 +47,74 @@ function getInitialAdminTab():AdminTab{
     if(ADMIN_TABS.some(([id])=>id===saved))return saved as AdminTab;
   }catch{}
   return 'employees';
+}
+function ReportDownloadMenu({month,requests,user,unitName,positionLabelFn}:{month:string;requests?:Leave[];user:Employee;unitName:string;positionLabelFn?:(pos:string)=>string}){
+  const [open,setOpen]=useState(false);
+  const containerRef=useRef<HTMLDivElement>(null);
+  useEffect(()=>{
+    if(!open)return;
+    const onDocClick=(e:MouseEvent)=>{if(containerRef.current&&!containerRef.current.contains(e.target as Node))setOpen(false);};
+    const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')setOpen(false);};
+    document.addEventListener('mousedown',onDocClick);
+    document.addEventListener('keydown',onKey);
+    return()=>{document.removeEventListener('mousedown',onDocClick);document.removeEventListener('keydown',onKey);};
+  },[open]);
+
+  const excelUrl=`/api/reports.xlsx?month=${month}`;
+
+  const handleDownloadPdf=async ()=>{
+    const list=requests||[];
+    const relevantRows=list.filter((r:Leave)=>(month==='all'||(r.effectiveStart||r.start||'').startsWith(month))&&r.status!=='DRAFT');
+    const {downloadPdfReport} = await import('./reportPdf');
+    downloadPdfReport({
+      rows:relevantRows,
+      actor:user,
+      month,
+      unitName:unitName||'Kantor Cabang',
+      positionLabelFn
+    });
+    setOpen(false);
+  };
+
+  return <div className="download-dropdown-wrap" ref={containerRef}>
+    <a
+      className="button secondary download-trigger-btn"
+      href={excelUrl}
+      aria-label="Unduh laporan"
+      aria-expanded={open}
+      aria-haspopup="true"
+      onClick={e=>{
+        e.preventDefault();
+        setOpen(o=>!o);
+      }}
+    >
+      <ArrowDownToLine size={17}/>
+      <span>Unduh laporan</span>
+      <ChevronDown size={14} style={{marginLeft:2,opacity:0.8}}/>
+    </a>
+    {open&&(
+      <div className="download-popover" role="menu">
+        <div className="popover-header">
+          <strong>Pilih Format Unduhan</strong>
+          <small>Periode: {month==='all'?'Semua bulan':monthLabel(month)}</small>
+        </div>
+        <a href={excelUrl} className="download-option" role="menuitem" onClick={()=>setOpen(false)}>
+          <div className="opt-icon excel"><FileSpreadsheet size={18}/></div>
+          <div className="opt-content">
+            <strong>Unduh Excel (.xlsx)</strong>
+            <span>Format spreadsheet lengkap dengan formula & warna resmi</span>
+          </div>
+        </a>
+        <button type="button" className="download-option" role="menuitem" onClick={handleDownloadPdf}>
+          <div className="opt-icon pdf"><FileText size={18}/></div>
+          <div className="opt-content">
+            <strong>Unduh PDF (.pdf)</strong>
+            <span>Dokumen siap cetak dengan kop surat resmi BNI & tanggal lengkap</span>
+          </div>
+        </button>
+      </div>
+    )}
+  </div>;
 }
 const VALID_PAGES:Page[]=['dashboard','requests','calendar','form','profile','admin','notifications'];
 function getInitialPage():Page{
@@ -57,7 +141,32 @@ export default function App(){
   const [isVerify,setIsVerify]=useState(()=>window.location.hash.startsWith('#verify')||new URLSearchParams(window.location.search).has('verify'));
   const [requestMonth,setRequestMonth]=useState('');const [month,setMonth]=useState(getInitialMonth);const [data,setData]=useState<any>(null);const [refresh,setRefresh]=useState(0);const [error,setError]=useState('');const [toast,setToast]=useState('');const [selected,setSelected]=useState<Leave|null>(null);const [draft,setDraft]=useState<Leave|null>(null);const [menu,setMenu]=useState(false);const [loading,setLoading]=useState(false);  const sdm=user?.roles.includes('SDM');const admin=user?.roles.includes('ADMIN');
   const canViewRequests=Boolean(sdm||(!admin&&user?.roles.includes('EMPLOYEE')));
-  useEffect(()=>{Promise.all([api('/config').then(setConfig),api<Employee>('/me').then(setUser).catch(()=>{})]).finally(()=>setBoot(false));},[]);
+  useEffect(()=>{
+    let alive = true;
+    let attempts = 0;
+    const init = async () => {
+      try {
+        const [cfg, me] = await Promise.all([
+          api('/config'),
+          api<Employee>('/me').catch(() => null)
+        ]);
+        if (!alive) return;
+        setConfig(cfg);
+        if (me) setUser(me);
+        setBoot(false);
+      } catch {
+        if (!alive) return;
+        if (attempts < 6) {
+          attempts++;
+          setTimeout(init, 500);
+        } else {
+          setBoot(false);
+        }
+      }
+    };
+    void init();
+    return () => { alive = false; };
+  },[]);
   useEffect(()=>{
     if(!user)return;let alive=true;let fetching=false;
     async function load(background=false){
@@ -145,7 +254,7 @@ export default function App(){
     ...(canViewRequests?[['requests',FileText,sdm?'Pengajuan cuti':'Pengajuan saya'] as [Page,typeof Home,string]]:[]),
     ['calendar',CalendarDays,'Kalender cuti']
   ];
-  const pending=data?.requests.filter((r:Leave)=>r.status==='PENDING_SDM'||(sdm&&r.status==='APPROVED'&&r.cancellation?.status==='PENDING')).length??0;
+  const pending=data?.requests?.filter((r:Leave)=>r.status==='PENDING_SDM'||(sdm&&r.status==='APPROVED'&&r.cancellation?.status==='PENDING')).length??0;
   return <DirectoryContext.Provider value={data?.positions??POSITIONS}><div className="app-shell">
     {sdm&&data&&<NewLeavePopup key={user.id+':'+user.unit} requests={data.requests} userId={user.id} visible={page==='dashboard'&&!selected&&!menu} onSelect={setSelected}/>}
     {menu&&<div className="menu-scrim" onClick={()=>setMenu(false)}/>}
@@ -155,7 +264,7 @@ export default function App(){
       <div className="sidebar-bottom"><button className="user-card" onClick={()=>nav('profile')}><span className="avatar teal">{initials(user.name)}</span><span><strong>{user.name}</strong><small>{sdm?'Divisi Sumber Daya Manusia':positionLabel(user.position)}</small></span><ChevronRight size={16}/></button></div>
     </aside>
     <div className="main-shell"><header className="topbar"><button className="icon-button mobile-menu" aria-label="Buka menu" onClick={()=>setMenu(true)}><Menu/></button><div className="breadcrumb"><strong>{pageTitles[page]}</strong></div><div className="top-actions"><span className="today">{fmt(data?.today??config?.today??dateOnly(),true)}</span><button className="icon-button notification-button" aria-label="Notifikasi" onClick={()=>nav(admin?'admin':'notifications')}><Bell size={20}/>{pending>0&&<i/>}</button><button className="avatar small teal" aria-label="Profil saya" onClick={()=>nav('profile')}>{initials(user.name)}</button></div></header>
-      <main className={page==='calendar'?'calendar-page':undefined}><div className="page-heading"><div><h1>{pageTitles[page]}</h1></div>{['dashboard','requests','calendar'].includes(page)&&<div className="heading-actions"><label className="month-control"><CalendarDays size={17}/><input aria-label="Bulan monitoring" type="month" value={month} onChange={e=>{if(e.target.value)setMonth(e.target.value);}}/></label>{page==='requests'&&<label className="month-control"><CalendarDays size={17}/><select aria-label="Filter bulan pengajuan" value={requestMonth} onChange={e=>setRequestMonth(e.target.value)}><option value="">Semua bulan</option>{Array.from(new Set<string>((data?.requests??[]).map((r:Leave)=>(r.effectiveStart||r.start).slice(0,7)).filter((m:string)=>/^\d{4}-\d{2}$/.test(m)))).sort().reverse().map(m=><option key={m} value={m}>{monthLabel(m)}</option>)}</select></label>}{sdm?<a className="button secondary" href={'/api/reports.xlsx?month='+(page==='requests'?(requestMonth||'all'):month)}><ArrowDownToLine size={17}/>Unduh laporan</a>:!admin&&<button className="button primary" onClick={newLeave}><Plus size={18}/>Ajukan cuti</button>}</div>}</div>
+      <main className={page==='calendar'?'calendar-page':undefined}><div className="page-heading"><div><h1>{pageTitles[page]}</h1></div>{['dashboard','requests','calendar'].includes(page)&&<div className="heading-actions"><label className="month-control"><CalendarDays size={17}/><input aria-label="Bulan monitoring" type="month" value={month} onChange={e=>{if(e.target.value)setMonth(e.target.value);}}/></label>{page==='requests'&&<label className="month-control"><CalendarDays size={17}/><select aria-label="Filter bulan pengajuan" value={requestMonth} onChange={e=>setRequestMonth(e.target.value)}><option value="">Semua bulan</option>{Array.from(new Set<string>((data?.requests??[]).map((r:Leave)=>(r.effectiveStart||r.start).slice(0,7)).filter((m:string)=>/^\d{4}-\d{2}$/.test(m)))).sort().reverse().map(m=><option key={m} value={m}>{monthLabel(m)}</option>)}</select></label>}{page==='requests'&&sdm?<ReportDownloadMenu month={requestMonth||'all'} requests={data?.requests??[]} user={user} unitName={data?.unitName??'Kantor Cabang'} positionLabelFn={positionLabel}/>:!sdm&&!admin&&<button className="button primary" onClick={newLeave}><Plus size={18}/>Ajukan cuti</button>}</div>}</div>
       {error&&<div className="alert danger" role="alert">{error}<button onClick={reload}>Coba lagi</button></div>}
       {loading&&!data?<div className="skeleton-grid"><div/><div/><div/></div>:data&&<>
         {page==='dashboard'&&<Dashboard data={data} month={month} sdm={!!sdm} name={user.name} onSelect={setSelected} onRequests={()=>nav('requests')} onCalendar={()=>nav('calendar')} onNew={newLeave} admin={!!admin} onAdmin={openAdmin} userId={user.id}/>}
@@ -180,7 +289,7 @@ function Login({config,onLogin}:{config:any;onLogin:(u:Employee)=>void}){
 }
 function Dashboard({data,month,sdm,onSelect,onRequests,onCalendar,admin,onAdmin,userId}:any){
   const [sdmTab,setSdmTab]=useState<'overview'|'analytics'>('overview');
-  const current:Leave[]=data.requests.filter((r:Leave)=>r.effectiveStart.startsWith(month)&&r.status!=='DRAFT');const waiting=current.filter(r=>r.status==='PENDING_SDM');const approved=current.filter(r=>r.status==='APPROVED');const quotas:Quota[]=data.quotas;
+  const current:Leave[]=(data?.requests??[]).filter((r:Leave)=>(r.effectiveStart||r.start||'').startsWith(month)&&r.status!=='DRAFT');const waiting=current.filter(r=>r.status==='PENDING_SDM');const approved=current.filter(r=>r.status==='APPROVED');const quotas:Quota[]=data?.quotas??[];
   return <>
     {sdm&&<div className="sdm-dashboard-tabs">
       <button type="button" className={'sdm-tab-btn '+(sdmTab==='overview'?'active':'')} onClick={()=>setSdmTab('overview')}>
@@ -240,18 +349,73 @@ function Dashboard({data,month,sdm,onSelect,onRequests,onCalendar,admin,onAdmin,
     </>)}
   </>;
 }
-function RequestTable({requests,onSelect,compact=false,onDraft,userId}:{requests:Leave[];onSelect:(r:Leave)=>void;compact?:boolean;onDraft?:(r:Leave)=>void;userId?:string}){const {positionLabel}=useDirectory();return requests.length?<div className="table-scroll"><table><thead><tr><th>Karyawan</th><th>Jadwal cuti</th>{!compact&&<th>Jenis</th>}<th>Status</th><th aria-label="Aksi"/></tr></thead><tbody>{requests.map((r,i)=>{const isPgs=userId&&r.replacement?.employeeId===userId&&r.employeeId!==userId;return <tr key={r.id}><td><div className="person"><span className="avatar neutral">{initials(r.employeeName)}</span><div><strong>{r.employeeName}</strong><small>{(r.positionName??positionLabel(r.position))}{isPgs?' · Tugas PGS':''}</small></div></div></td><td><span className="date-range">{fmt(r.effectiveStart||r.start)}{r.effectiveEnd!==r.effectiveStart?' – '+fmt(r.effectiveEnd||r.end):''}</span><small>{r.duration} hari kerja</small></td>{!compact&&<td><span className={'category '+r.category.toLowerCase()}>{r.category==='REGULAR'?'Reguler':'Darurat'}</span><small>{r.number}</small></td>}<td><Badge status={r.status} cancellation={r.cancellation}/>{isPgs&&<span className="badge approved" style={{marginLeft:6}}><span/>Tugas PGS</span>}</td><td><button className="icon-button table-arrow" aria-label={'Lihat '+r.employeeName+' '+r.number} onClick={()=>r.status==='DRAFT'&&onDraft?onDraft(r):onSelect(r)}><ArrowUpRight size={17}/></button></td></tr>;})}</tbody></table></div>:<Empty/>;}
+function RequestTable({requests,onSelect,compact=false,onDraft,userId}:{requests:Leave[];onSelect:(r:Leave)=>void;compact?:boolean;onDraft?:(r:Leave)=>void;userId?:string}){
+  const {positionLabel}=useDirectory();
+  return requests.length?<div className="table-scroll"><table><thead><tr>
+    <th>Karyawan</th>
+    <th>Jadwal cuti</th>
+    <th>Waktu pengajuan</th>
+    {!compact&&<th>Jenis</th>}
+    <th>Status</th>
+    <th aria-label="Aksi"/>
+  </tr></thead><tbody>{requests.map((r,i)=>{
+    const isPgs=userId&&r.replacement?.employeeId===userId&&r.employeeId!==userId;
+    const submitTime=r.submittedAt||r.createdAt;
+    return <tr key={r.id}>
+      <td>
+        <div className="person">
+          <span className="avatar neutral">{initials(r.employeeName)}</span>
+          <div>
+            <strong>{r.employeeName}</strong>
+            <small>{(r.positionName??positionLabel(r.position))}{isPgs?' · Tugas PGS':''}</small>
+          </div>
+        </div>
+      </td>
+      <td>
+        <span className="date-range">{fmt(r.effectiveStart||r.start)}{r.effectiveEnd!==r.effectiveStart?' – '+fmt(r.effectiveEnd||r.end):''}</span>
+        <small>{r.duration} hari kerja</small>
+      </td>
+      <td>
+        <div className="submit-time-cell">
+          <span className="submit-date">{submitTime ? fmtDateTimeDate(submitTime) : '—'}</span>
+          <span className="submit-time-badge">
+            <Clock size={11} className="time-badge-icon"/>
+            <span>{submitTime ? fmtDateTimeTime(submitTime) : (r.status === 'DRAFT' ? 'Draf' : '—')}</span>
+          </span>
+        </div>
+      </td>
+      {!compact&&<td>
+        <span className={'category '+r.category.toLowerCase()}>{r.category==='REGULAR'?'Reguler':'Darurat'}</span>
+        <small>{r.number}</small>
+      </td>}
+      <td>
+        <Badge status={r.status} cancellation={r.cancellation}/>
+        {isPgs&&<span className="badge approved" style={{marginLeft:6}}><span/>Tugas PGS</span>}
+      </td>
+      <td>
+        <button className="icon-button table-arrow" aria-label={'Lihat '+r.employeeName+' '+r.number} onClick={()=>r.status==='DRAFT'&&onDraft?onDraft(r):onSelect(r)}>
+          <ArrowUpRight size={17}/>
+        </button>
+      </td>
+    </tr>;
+  })}</tbody></table></div>:<Empty/>;
+}
 function RequestList({requests,month,sdm,onSelect,onDraft,userId}:any){
   const {positionLabel}=useDirectory();
   const [query,setQuery]=useState('');
   const [status,setStatus]=useState('ALL');
+  const [sortOrder,setSortOrder]=useState<'newest'|'earliest'>('newest');
   const filtered=requests.filter((r:Leave)=>{
     const matchMonth=!month||(r.effectiveStart||r.start).startsWith(month);
     const matchStatus=status==='ALL'||(status==='CANCEL_PENDING'?(r.status==='APPROVED'&&r.cancellation?.status==='PENDING'):r.status===status);
     const matchQuery=`${r.employeeName} ${r.number} ${(r.positionName??positionLabel(r.position))}`.toLowerCase().includes(query.toLowerCase());
     return matchMonth&&matchStatus&&matchQuery;
+  }).sort((a:Leave,b:Leave)=>{
+    const timeA=a.submittedAt||a.createdAt||'';
+    const timeB=b.submittedAt||b.createdAt||'';
+    return sortOrder==='earliest'?timeA.localeCompare(timeB):timeB.localeCompare(timeA);
   });
-  return <section className="panel"><div className="list-toolbar"><div className="tabs">{[['ALL','Semua'],['PENDING_SDM','Menunggu'],...(sdm?[['CANCEL_PENDING','Perlu Batal']]:[]),['APPROVED','Disetujui'],['REJECTED','Ditolak'],...(!sdm?[['DRAFT','Draft'],['WITHDRAWN','Ditarik / Batal']]:[['WITHDRAWN','Dibatalkan']])].map(([id,label])=><button key={id} className={status===id?'selected':''} onClick={()=>setStatus(id)}>{label}</button>)}</div><label className="search"><Search size={17}/><input aria-label="Cari pengajuan" placeholder="Cari nama atau nomor…" value={query} onChange={e=>setQuery(e.target.value)}/></label></div><RequestTable requests={filtered} onSelect={onSelect} onDraft={onDraft} userId={userId}/><div className="table-footer">Menampilkan {filtered.length} pengajuan · {month?monthLabel(month):'Semua bulan'}</div></section>;
+  return <section className="panel"><div className="list-toolbar"><div className="tabs">{[['ALL','Semua'],['PENDING_SDM','Menunggu'],...(sdm?[['CANCEL_PENDING','Perlu Batal']]:[]),['APPROVED','Disetujui'],['REJECTED','Ditolak'],...(!sdm?[['DRAFT','Draft'],['WITHDRAWN','Ditarik / Batal']]:[['WITHDRAWN','Dibatalkan']])].map(([id,label])=><button key={id} className={status===id?'selected':''} onClick={()=>setStatus(id)}>{label}</button>)}</div><div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginLeft:'auto'}}><select aria-label="Urutan waktu pengajuan" className="sort-select" value={sortOrder} onChange={e=>setSortOrder(e.target.value as any)}><option value="newest">Waktu: Terbaru</option><option value="earliest">Waktu: Terdahulu (Antrean siapa cepat)</option></select><label className="search"><Search size={17}/><input aria-label="Cari pengajuan" placeholder="Cari nama atau nomor…" value={query} onChange={e=>setQuery(e.target.value)}/></label></div></div><RequestTable requests={filtered} onSelect={onSelect} onDraft={onDraft} userId={userId}/><div className="table-footer">Menampilkan {filtered.length} pengajuan · {month?monthLabel(month):'Semua bulan'}</div></section>;
 }
 function CalendarView({data,month,setMonth,onSelect}:any){const {positions:POSITIONS,positionLabel}=useDirectory();const [position,setPosition]=useState('ALL');const days=monthDays(month);const offset=(new Date(month+'-01T00:00:00').getDay()+6)%7;const entries=data.calendar.filter((r:any)=>position==='ALL'||r.position===position);return <><section className="panel calendar-panel"><div className="panel-heading"><div className="calendar-heading"><button className="icon-button" aria-label="Bulan sebelumnya" onClick={()=>setMonth(addMonths(month+'-01',-1).slice(0,7))}><ChevronLeft size={18}/></button><h2>{monthLabel(month)}</h2><button className="icon-button" aria-label="Bulan berikutnya" onClick={()=>setMonth(addMonths(month+'-01',1).slice(0,7))}><ChevronRight size={18}/></button></div><select aria-label="Filter posisi kalender" value={position} onChange={e=>setPosition(e.target.value)}><option value="ALL">Semua posisi</option>{data.quotas.map((q:Quota)=><option key={q.position} value={q.position}>{q.label}</option>)}</select></div><div className="calendar-scroll"><div className="calendar-grid">{['Sen','Sel','Rab','Kam','Jum','Sab','Min'].map(d=><div className="weekday" key={d}>{d}</div>)}{Array.from({length:offset},(_,i)=><div className="day outside" key={'o'+i}/>)}{days.map(d=>{const blocked=data.blocked.includes(d);const off=!isWorking(d,data.calendarConfig);return <div key={d} className={'day '+(blocked?'blocked ':'')+(off?'off ':'')+(d===data.today?'current':'')}><div className="day-number">{Number(d.slice(-2))}{blocked&&<small>H-3</small>}</div>{data.calendarConfig.exceptions[d]&&<small className="holiday-label">{data.calendarConfig.exceptions[d].label}</small>}{entries.filter((r:any)=>r.days.includes(d)).map((r:any,i:number)=><button disabled={!r.id} key={r.id+'-'+i} onClick={()=>onSelect(r.id)} className={'calendar-event '+(r.status==='APPROVED'?'approved':'pending')}><span>{r.name}</span><small>{(r.positionName??positionLabel(r.position))} · {r.status==='APPROVED'?'Disetujui':'Menunggu'}</small></button>)}</div>;})}</div></div><div className="legend calendar-legend"><span><i className="teal-dot"/>Disetujui</span><span><i className="orange-dot"/>Menunggu review</span><span><i className="blocked-dot"/>3 hari kerja terakhir</span><span>Kalender kerja unit: Senin–Jumat + pengecualian admin</span></div></section><section className="panel all-quotas"><div className="panel-heading"><h2>Kapasitas posisi bulan ini</h2><span className="muted">Terpakai / kuota orang</span></div><div className="quota-cards">{data.quotas.map((q:Quota)=><div key={q.position}><strong>{q.label}</strong><span>{q.used}<small> / {q.limit}</small></span><p>{q.available} orang tersedia</p></div>)}</div></section></>;}
 
@@ -644,7 +808,7 @@ function Detail({leave:r,user,today,unitName,onClose,onUpdate,onCopy}:{leave:Lea
       </div>
     </Modal>;
   }
-  return <Modal title={'Detail '+r.number} onClose={onClose}><div className="detail-title"><div className="person"><span className="avatar teal">{initials(r.employeeName)}</span><div><h3>{r.employeeName}</h3><p>{(r.positionName??positionLabel(r.position))} · {r.category==='REGULAR'?'Reguler':'Darurat'}</p></div></div><Badge status={r.status} cancellation={r.cancellation}/></div><div className="detail-dates"><div><small>Tanggal efektif</small><strong>{fmt(r.effectiveStart,true)} – {fmt(r.effectiveEnd,true)}</strong></div><b>{r.duration}<small>hari kerja</small></b></div><dl><dt>Tanggal diminta</dt><dd>{fmt(r.start,true)} – {fmt(r.end,true)}</dd><dt>Jenis cuti</dt><dd>{r.subtype}</dd><dt>Email</dt><dd>{r.email}</dd><dt>Nomor HP</dt><dd>{r.phone}</dd><dt>Versi kalender</dt><dd>{r.calendarVersion} · Kuota {r.limit} orang</dd></dl>
+  return <Modal title={'Detail '+r.number} onClose={onClose}><div className="detail-title"><div className="person"><span className="avatar teal">{initials(r.employeeName)}</span><div><h3>{r.employeeName}</h3><p>{(r.positionName??positionLabel(r.position))} · {r.category==='REGULAR'?'Reguler':'Darurat'}</p></div></div><Badge status={r.status} cancellation={r.cancellation}/></div><div className="detail-dates"><div><small>Tanggal efektif</small><strong>{fmt(r.effectiveStart,true)} – {fmt(r.effectiveEnd,true)}</strong></div><b>{r.duration}<small>hari kerja</small></b></div><dl><dt>Tanggal diminta</dt><dd>{fmt(r.start,true)} – {fmt(r.end,true)}</dd><dt>Waktu diajukan</dt><dd style={{fontWeight:600,color:'#183942'}}>{fmtDateTimeDate(r.submittedAt || r.createdAt)} · {fmtDateTimeTime(r.submittedAt || r.createdAt) || 'Draft'}</dd><dt>Jenis cuti</dt><dd>{r.subtype}</dd><dt>Email</dt><dd>{r.email}</dd><dt>Nomor HP</dt><dd>{r.phone}</dd><dt>Versi kalender</dt><dd>{r.calendarVersion} · Kuota {r.limit} orang</dd></dl>
     {hasPendingCancellation&&<div className="alert warning" style={{display:'flex',flexDirection:'column',gap:5}}>
       <div style={{display:'flex',alignItems:'center',gap:7}}><AlertCircle size={18}/><strong>Permohonan Pembatalan Cuti Menunggu Persetujuan SDM</strong></div>
       <p style={{margin:0,fontSize:12,color:'#825619'}}>Alasan pembatalan karyawan: <em>"{r.cancellation?.reason}"</em><br/><small>Diajukan pada {new Date(r.cancellation!.requestedAt).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'})} WIB</small></p>

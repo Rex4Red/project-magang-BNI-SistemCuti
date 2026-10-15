@@ -255,3 +255,111 @@ th{font-size:11px;color:#6b7e85}td{padding:16px 20px;font-size:13px}td>small{fon
 .new-leave-summary{font-size:14px;line-height:1.6;color:#60777f}.new-leave-list{list-style:none;padding:0;margin:18px 0 0}.new-leave-list li{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 0;border-bottom:1px solid var(--border)}.new-leave-list strong,.new-leave-list span{display:block}.new-leave-list strong{font-size:15px}.new-leave-list span{font-size:12px;line-height:1.7;color:#60777f;margin-top:3px}@media(max-width:480px){.new-leave-list li{align-items:flex-start;flex-direction:column}.new-leave-list .button{width:100%}}
 .calendar-panel .panel-heading{padding:12px 16px}.calendar-panel .weekday{padding:8px}.calendar-panel .day{min-height:clamp(56px,calc((100dvh - 280px) / 6),88px);padding:6px 8px}.calendar-panel .day-number{margin-bottom:5px}.calendar-panel .calendar-event{padding:4px 6px}.calendar-panel .calendar-event small{margin-top:2px}.calendar-panel .calendar-legend{padding:12px 16px;flex-wrap:wrap}
 @media(min-width:761px){main.calendar-page{padding-top:20px}.calendar-page .page-heading{margin-bottom:16px}}
+
+/* --- Download Report Dropdown & Popover --- */
+.download-dropdown-wrap{position:relative;display:inline-block}
+.download-trigger-btn{display:inline-flex;align-items:center;gap:6px}
+.download-popover{
+  position:absolute;
+  top:calc(100% + 6px);
+  right:0;
+  z-index:95;
+  background:#fff;
+  border:1px solid #dce5e8;
+  border-radius:10px;
+  box-shadow:0 12px 32px rgba(19,54,66,0.18);
+  min-width:275px;
+  padding:6px;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  animation:popoverFade .15s ease-out;
+}
+@keyframes popoverFade{
+  from{opacity:0;transform:translateY(-4px)}
+  to{opacity:1;transform:translateY(0)}
+}
+.popover-header{
+  padding:8px 10px 6px;
+  border-bottom:1px solid #edf2f4;
+  margin-bottom:2px;
+}
+.popover-header strong{display:block;font-size:11.5px;color:#183942;font-weight:700}
+.popover-header small{font-size:10.5px;color:#7e9299}
+.download-option{
+  display:flex;
+  align-items:center;
+  gap:11px;
+  padding:9px 10px;
+  border-radius:7px;
+  text-decoration:none;
+  background:transparent;
+  border:none;
+  cursor:pointer;
+  width:100%;
+  text-align:left;
+  transition:background .15s ease;
+}
+.download-option:hover{background:#f3f7f8}
+.download-option .opt-icon{
+  width:34px;
+  height:34px;
+  border-radius:7px;
+  display:grid;
+  place-items:center;
+  flex-shrink:0;
+}
+.download-option .opt-icon.excel{background:#eaf8ef;color:#0e8362}
+.download-option .opt-icon.pdf{background:#fef2f2;color:#dc2626}
+.download-option .opt-content{display:flex;flex-direction:column}
+.download-option .opt-content strong{font-size:12px;color:#1e3e46;font-weight:600}
+.download-option .opt-content span{font-size:10px;color:#758990;margin-top:1px;line-height:1.3}
+
+/* Sort select in request list */
+.sort-select{
+  padding:7px 12px;
+  border:1px solid #dbe4e6;
+  border-radius:8px;
+  background:#fff;
+  font-size:12px;
+  font-weight:500;
+  color:#29464e;
+  cursor:pointer;
+  outline:none;
+}
+.sort-select:focus{border-color:#006776}
+
+/* Submission timestamp column styling */
+.submit-time-cell{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:4px;
+}
+.submit-date{
+  font-size:12.5px;
+  font-weight:600;
+  color:#173841;
+  white-space:nowrap;
+  line-height:1.25;
+}
+.submit-time-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  font-size:11px;
+  font-weight:500;
+  color:#4b666e;
+  background:#f1f6f7;
+  padding:2px 7px;
+  border-radius:4px;
+  border:1px solid #e1ecee;
+  line-height:1.2;
+  white-space:nowrap;
+  font-variant-numeric:tabular-nums;
+}
+.submit-time-badge .time-badge-icon{
+  color:#006776;
+  opacity:0.85;
+  flex-shrink:0;
+}

@@ -3,15 +3,23 @@ import type {Leave} from '../shared/domain';
 import {Modal} from './Modal';
 import {useDirectory} from './DirectoryContext';
 
-const formatDate=(value:string)=>new Intl.DateTimeFormat('id-ID',{day:'numeric',month:'short',year:'numeric'}).format(new Date(value+'T00:00:00'));
+const formatDate=(value?:string)=>{
+  if(!value)return '—';
+  try{
+    const d=new Date(value.includes('T')?value:value+'T00:00:00');
+    if(isNaN(d.getTime()))return value;
+    return new Intl.DateTimeFormat('id-ID',{day:'numeric',month:'short',year:'numeric'}).format(d);
+  }catch{return value;}
+};
 
-export function NewLeavePopup({requests,userId,visible,onSelect}:{requests:Leave[];userId:string;visible:boolean;onSelect:(leave:Leave)=>void}){
+export function NewLeavePopup({requests,userId,visible,onSelect}:{requests?:Leave[];userId:string;visible:boolean;onSelect:(leave:Leave)=>void}){
   const storageKey='bni_cuti_popup_seen:'+userId;
   const known=useRef<Set<string>|null>(null);
   const [queued,setQueued]=useState<string[]>([]);
   const {positionLabel}=useDirectory();
   useEffect(()=>{
-    const pending=requests.filter(r=>r.status==='PENDING_SDM'&&r.employeeId!==userId);
+    const list=requests||[];
+    const pending=list.filter(r=>r.status==='PENDING_SDM'&&r.employeeId!==userId);
     if(!known.current){
       let saved:unknown=[];try{saved=JSON.parse(sessionStorage.getItem(storageKey)??'[]');}catch{}
       known.current=new Set(Array.isArray(saved)?saved.filter((id):id is string=>typeof id==='string'):[]);
@@ -22,7 +30,7 @@ export function NewLeavePopup({requests,userId,visible,onSelect}:{requests:Leave
     const active=new Set(pending.map(r=>r.id));
     setQueued(previous=>[...previous.filter(id=>active.has(id)),...incoming.map(r=>r.id)]);
   },[requests,userId,storageKey]);
-  const leaves=queued.map(id=>requests.find(r=>r.id===id&&r.status==='PENDING_SDM')).filter((r):r is Leave=>!!r);
+  const leaves=queued.map(id=>(requests||[]).find(r=>r.id===id&&r.status==='PENDING_SDM')).filter((r):r is Leave=>!!r);
   if(!visible||!leaves.length)return null;
   return <Modal compact title="Pengajuan menunggu review" onClose={()=>setQueued([])}>
     <p className="new-leave-summary" role="status">{leaves.length===1?'Ada pengajuan yang perlu ditinjau.':`${leaves.length} pengajuan perlu ditinjau.`}</p>

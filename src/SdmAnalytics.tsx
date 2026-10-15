@@ -10,8 +10,11 @@ type Props={
 const monthName=(m:string)=>new Intl.DateTimeFormat('id-ID',{month:'long',year:'numeric'}).format(new Date(m+'-01T00:00:00'));
 
 export function SdmAnalytics({data,month,onSelect:_onSelect}:Props){
-  const requests:Leave[]=data.requests.filter((r:Leave)=>r.effectiveStart.startsWith(month)&&r.status!=='DRAFT');
-  const quotas:Quota[]=data.quotas||[];
+  const rawRequests: Leave[] = data?.requests || [];
+  const requests: Leave[] = rawRequests.filter(
+    (r: Leave) => (r.effectiveStart || r.start || '').startsWith(month) && r.status !== 'DRAFT'
+  );
+  const quotas: Quota[] = data?.quotas || [];
 
   const approved=requests.filter(r=>r.status==='APPROVED');
   const pending=requests.filter(r=>r.status==='PENDING_SDM');
