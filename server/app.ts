@@ -7,6 +7,7 @@ import {randomBytes,randomUUID} from 'node:crypto';
 import {resolve} from 'node:path';
 import {z,ZodError} from 'zod';
 import type {Database} from './db';
+import {changePassword} from './account';
 import {directoryRoutes} from './directory';
 import {assignedDuring,employeeOutlet,outlets,replacementCheck} from './replacement';
 import {AppError,act,audit,canRead,checkEmail,digest,employees,ensure,getPolicy,inputSchema,mutate,preview,requests,saveRequest,submit} from './service';
@@ -79,6 +80,9 @@ export function createApp(db:Database,options:{demo:boolean;now?:()=>Date;origin
   });
   app.use('/api',async(req,_res,next)=>{try{const token=req.cookies.cuti_session;ensure(typeof token==='string','Silakan masuk kembali.',401);const row=(await db.query('SELECT e.data FROM sessions s JOIN employees e ON e.id=s.employee_id WHERE s.token=$1 AND s.expires_at>$2',[digest(token),now().toISOString()])).rows[0];ensure(row?.data.active,'Sesi berakhir. Silakan masuk kembali.',401);req.actor=row.data;next();}catch(e){next(e);}});
   app.get('/api/me',(req,res)=>res.json(req.actor));
+  app.post('/api/me/password',rateLimit({windowMs:15*60*1000,limit:10,keyGenerator:req=>req.actor.id,standardHeaders:true,legacyHeaders:false,message:{message:'Terlalu banyak percobaan. Coba lagi dalam 15 menit.'}}),async(req,res)=>{
+    res.json(await changePassword(db,req.actor,digest(req.cookies.cuti_session),req.body));
+  });
   app.post('/api/logout',async(req,res)=>{await db.query('DELETE FROM sessions WHERE token=$1',[digest(req.cookies.cuti_session)]);res.clearCookie('cuti_session').json({ok:true});});
   app.get('/api/dashboard',async(req,res)=>{
     const month=z.string().regex(/^20\d{2}-(0[1-9]|1[0-2])$/).parse(req.query.month);const actor=req.actor;const all=await requests(db,actor.unit);const policy=await getPolicy(db,actor.unit);const sdm=actor.roles.includes('SDM');
@@ -92,7 +96,8 @@ export function createApp(db:Database,options:{demo:boolean;now?:()=>Date;origin
     }).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
     const positions=positionsFor(policy);const quotas=positions.filter(p=>sdm||actor.roles.includes('ADMIN')||p[0]===actor.position).map(([code,label])=>({...quotaFor(code,month,all,limitFor(code,month,policy,all),actor.id),label}));
     const calendar=all.filter(r=>ACTIVE.includes(r.status)&&r.effectiveStart.slice(0,7)===month&&(sdm||r.position===actor.position||r.replacement?.employeeId===actor.id)).map(r=>({id:sdm||r.employeeId===actor.id||r.replacement?.employeeId===actor.id?r.id:'',name:sdm||r.employeeId===actor.id||r.replacement?.employeeId===actor.id?r.employeeName:'Rekan satu posisi',position:r.position,status:r.status,days:r.days}));
-    res.json({requests:visible,quotas,calendar,positions,blocked:blockedDays(month,policy.calendar),calendarConfig:policy.calendar,today:dateOnly(now()),unitName:(await db.query('SELECT name FROM units WHERE id=$1',[actor.unit])).rows[0].name});
+    const location=(await outlets(db,actor.unit)).find(outlet=>outlet.id===employeeOutlet(actor));
+    res.json({requests:visible,quotas,calendar,positions,blocked:blockedDays(month,policy.calendar),calendarConfig:policy.calendar,today:dateOnly(now()),outletName:location?.name??'Outlet belum diatur',unitName:(await db.query('SELECT name FROM units WHERE id=$1',[actor.unit])).rows[0].name});
   });
   app.post('/api/leave-requests/preview',async(req,res)=>{const input=inputSchema.parse(req.body);checkEmail(input.email);res.json(await preview(db,req.actor,input,now()));});
   app.post('/api/leave-requests',async(req,res)=>res.status(201).json(await submit(db,req.actor,req.body,req.get('idempotency-key')??'',now())));

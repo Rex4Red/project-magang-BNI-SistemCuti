@@ -24,6 +24,7 @@ Akun tersebut hanya untuk demonstrasi. Seed hanya berjalan pada database kosong.
 ## Fitur yang tersedia
 
 - Login cookie HttpOnly, peran karyawan/SDM/admin, dan pembatasan data per unit.
+- Ganti kata sandi melalui Profil saya untuk semua peran: verifikasi kata sandi saat ini, kata sandi baru minimal 6 karakter kombinasi huruf dan angka, serta konfirmasi. Perubahan dicatat di audit dan mengakhiri sesi pada perangkat lain; sesi yang dipakai tetap aktif.
 - Dashboard bulanan, kuota orang unik, daftar pengajuan, dan kalender posisi.
 - Popup pengajuan baru untuk SDM di Ringkasan, diperiksa setiap 5 detik saat aplikasi terlihat. Beberapa pengajuan digabung dalam satu popup dengan tombol Tutup dan Lihat pengajuan. Saat SDM login, pengajuan yang masih menunggu review langsung ditampilkan tanpa bergantung pada filter bulan. Popup tidak berulang saat refresh dalam sesi yang sama; login kembali menampilkan pengingat lagi. Pengajuan baru yang terdeteksi saat SDM di halaman lain menunggu sampai kembali ke Ringkasan.
 - Pengajuan reguler/darurat, preview dari server, durasi hari kerja, pemotongan H-3, batas 5 hari, konflik rentang identik dan irisan maksimal 2 hari.

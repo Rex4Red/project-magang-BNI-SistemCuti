@@ -253,3 +253,5 @@ th{font-size:11px;color:#6b7e85}td{padding:16px 20px;font-size:13px}td>small{fon
 
 
 .new-leave-summary{font-size:14px;line-height:1.6;color:#60777f}.new-leave-list{list-style:none;padding:0;margin:18px 0 0}.new-leave-list li{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 0;border-bottom:1px solid var(--border)}.new-leave-list strong,.new-leave-list span{display:block}.new-leave-list strong{font-size:15px}.new-leave-list span{font-size:12px;line-height:1.7;color:#60777f;margin-top:3px}@media(max-width:480px){.new-leave-list li{align-items:flex-start;flex-direction:column}.new-leave-list .button{width:100%}}
+.calendar-panel .panel-heading{padding:12px 16px}.calendar-panel .weekday{padding:8px}.calendar-panel .day{min-height:clamp(56px,calc((100dvh - 280px) / 6),88px);padding:6px 8px}.calendar-panel .day-number{margin-bottom:5px}.calendar-panel .calendar-event{padding:4px 6px}.calendar-panel .calendar-event small{margin-top:2px}.calendar-panel .calendar-legend{padding:12px 16px;flex-wrap:wrap}
+@media(min-width:761px){main.calendar-page{padding-top:20px}.calendar-page .page-heading{margin-bottom:16px}}
